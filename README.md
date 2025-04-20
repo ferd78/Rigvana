@@ -1,8 +1,8 @@
 # How to run
-```git clone https://github.com/ferd78/Rigvana.git```
+``` git clone https://github.com/ferd78/Rigvana.git ```
 
-```cd Rigvana```
+``` cd Rigvana ```
 
-```npm install```
+``` npm install ```
 
-``` npx expo start```
+``` npx expo start ```
