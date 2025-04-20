@@ -1,0 +1,24 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./App.{js,jsx,ts,tsx}",
+    "./pages/**/*.{js,jsx,ts,tsx}",
+    "./components/**/*.{js,jsx,ts,tsx}",
+  ],
+  presets: [require("nativewind/preset")],
+  theme: {
+    extend: {
+      colors: {
+        semiblack: "#1B1B1B",
+        ymblue: "#B6CFF8",
+      },
+      fontFamily: {
+        jura: ['Jura'],
+        'jura-bold': ['JuraBold'],
+        helvetica: ['Helvetica'],
+        'helvetica-bold': ['HelveticaBold']
+      },
+    },
+  },
+  plugins: [],
+}

@@ -1,20 +1,41 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import "./global.css"
+import { useFonts } from 'expo-font';
+import { useEffect } from 'react';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { NavigationContainer } from '@react-navigation/native';
+import LoginPage from "./pages/LoginPage";
+import Register from "./pages/Register";
+import Home from "./pages/Home";
+import * as SplashScreen from 'expo-splash-screen';
+const Stack = createNativeStackNavigator();
 
-export default function App() {
+SplashScreen.preventAutoHideAsync(); 
+
+function App() {
+  const [fontsLoaded] = useFonts({
+    Jura: require('./assets/fonts/Jura-Regular.ttf'),
+    JuraBold: require('./assets/fonts/Jura-Bold.ttf'),
+    Helvetica: require('./assets/fonts/Helvetica.ttf'),
+    HelveticaBold: require('./assets/fonts/Helvetica-Bold.ttf')
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync();
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="Login">
+          <Stack.Screen name="Login" component={LoginPage} options={{ headerShown: false }}/>
+          <Stack.Screen name="Register" component={Register} options={{ headerShown: false }}/>
+          <Stack.Screen name="Home" component={Home} options={{ headerShown: false}}/>
+        </Stack.Navigator>
+      </NavigationContainer>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+export default App;
+
+
