@@ -6,7 +6,7 @@ import "../global.css";
 
 function Home(){
     return (
-        <View className="h-screen bg-semiblack">
+        <View className="h-full bg-semiblack">
             <View className="pt-8 px-4 flex-row items-center justify-between">
                 <Text className="text-ymblue font-jura-bold text-3xl tracking-widest">RIGVANA</Text>
                 <View className="flex-row gap-3 items-center">
