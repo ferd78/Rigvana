@@ -13,7 +13,7 @@ function LoginPage() {
 
     const handleLogin = async () => {
         try {
-            const response = await fetch("http://192.168.0.200:5049/login", {
+            const response = await fetch("http://192.168.56.1:5049/login", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

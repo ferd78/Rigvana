@@ -29,7 +29,7 @@ function SetNewPassword() {
         }
 
         try {
-            const response = await fetch("http://192.168.0.200:5049/reset-password", {
+            const response = await fetch("http://192.168.56.1:5049/reset-password", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp, new_password: password }),
