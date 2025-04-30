@@ -3,28 +3,50 @@ import "../global.css";
 import { Ionicons } from "@expo/vector-icons";
 import InputField from "../components/InputField";
 import LoginButton from "../components/LoginButton";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useState } from "react";
 
 function SetNewPassword() {
     const nav = useNavigation();
+    const route = useRoute();
+    const { email, otp } = route.params;
+
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [error, setError] = useState("");
-    const handleContinuation = () => {
-        if(password !== confirmPassword){
-            setError("Passwords do not match!")
-            return
+
+    const handleReset = async () => {
+        setError(""); // Clear previous error
+
+        if (!password || password.length < 6) {
+            setError("Password must be at least 6 characters.");
+            return;
         }
 
-        if(!password || !confirmPassword){
-            setError("Please fill in both fields!")
-            return
+        if (password !== confirmPassword) {
+            setError("Passwords do not match.");
+            return;
         }
 
-        setError("")
-        nav.navigate("Login")
-    }
+        try {
+            const response = await fetch("http://192.168.0.200:5049/reset-password", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, otp, new_password: password }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                Alert.alert("Error", data.detail || "Password reset failed.");
+                return;
+            }
+
+            Alert.alert("Success", "Password updated!");
+            nav.navigate("Login");
+        } catch (err) {
+            Alert.alert("Error", "Failed to reset password.");
+        }
+    };
 
     return (
         <View className="h-full bg-semiblack">
@@ -35,20 +57,17 @@ function SetNewPassword() {
                 <Text className="text-helvetica-bold text-white text-4xl">
                     Set New Password
                 </Text>
-                
             </View>
 
             <View className="items-center pt-12">
                 <Text className="text-helvetica text-white text-md">
                     Enter new password:
                 </Text>
-                <InputField label="Password" onChangeText={(text) => setPassword(text)}/>
-                <InputField label="Confirm Password" onChangeText={(text) => setConfirmPassword(text)}/>
+                <InputField label="Password" onChangeText={setPassword} />
+                <InputField label="Confirm Password" onChangeText={setConfirmPassword} />
 
+                <LoginButton label="Continue" onPress={handleReset} /> 
 
-                <LoginButton label="Continue" onPress={handleContinuation}/> 
-
-            
                 {error !== "" && (
                     <Text className="text-red-500 text-sm text-helvetica mt-4">{error}</Text>
                 )}
@@ -56,6 +75,5 @@ function SetNewPassword() {
         </View>
     );
 }
-
 
 export default SetNewPassword;

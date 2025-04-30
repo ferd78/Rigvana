@@ -11,19 +11,35 @@ function ForgotPassword(){
     const nav = useNavigation();
     const [email, setEmail] = useState("");
     const [error, setError] = useState("");
-    const handleContinue = () => {
-        if(!email){
-            setError("Please fill in the field first!")
-            return
+    const handleContinue = async () => {
+        if (!email) {
+            setError("Please fill in the field first!");
+            return;
         }
-
+    
         if (!email.endsWith("@gmail.com")) {
             setError("Email must be a @gmail.com address!");
             return;
         }
-
-        setError("")
-        nav.navigate("Verification")
+    
+        try {
+            const response = await fetch("http://192.168.0.200:5049/request-password-reset", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email }),
+            });
+    
+            if (!response.ok) {
+                const data = await response.json();
+                setError(data.detail || "Failed to send OTP.");
+                return;
+            }
+    
+            setError("");
+            nav.navigate("Verification", { email }); 
+        } catch (err) {
+            setError("Error sending OTP. Try again.");
+        }
     };
 
     return (

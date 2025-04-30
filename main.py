@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+import datetime
 from fastapi import FastAPI # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
@@ -16,20 +16,11 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 import traceback
-
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime
 
 # For firebase configs
-=======
-from fastapi import FastAPI
-import uvicorn
-import firebase_admin
-from firebase_admin import credentials, auth
-import pyrebase
-from pydantic import BaseModel
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import HTTPException
-from fastapi.requests import Request
->>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 
 app = FastAPI(
     description="RigVana's backend",
@@ -40,11 +31,8 @@ app = FastAPI(
 if not firebase_admin._apps:
     cred = credentials.Certificate("nuclearlaunchcode.json")
     firebase_admin.initialize_app(cred)
-<<<<<<< HEAD
     db = firestore.client()
 
-=======
->>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 
 
 firebase_config = {
@@ -62,7 +50,6 @@ firebase_config = {
 firebase = pyrebase.initialize_app(firebase_config)
 
 
-<<<<<<< HEAD
 # for reset pass otp
 env_path = Path(__file__).parent / "email.env"
 load_dotenv(dotenv_path=env_path)
@@ -71,9 +58,7 @@ EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 otp_store: Dict[str, Dict[str, str]] = {}
 
 
-
-=======
->>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
+security = HTTPBearer()
 ######################################################### SCHEMAS ############################################
 
 class SignupSchema(BaseModel):
@@ -85,7 +70,6 @@ class LoginSchema(BaseModel):
     email: str
     password: str
 
-<<<<<<< HEAD
 class OTPVerify(BaseModel):
     email: str
     otp: str
@@ -132,14 +116,6 @@ def send_email(to_email: str, content: str):
         raise HTTPException(status_code=500, detail="Failed to send email")
 
 ######################################################### ENPOINTS ############################################
-=======
-
-#################################################################################################################
-
-
-
-######################################################### ENDPOINTS ############################################
->>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 
 @app.get("/")
 async def root():
@@ -205,7 +181,6 @@ async def validate_token(request: Request):
 
     return user.uid
 
-<<<<<<< HEAD
 @app.post("/request-password-reset")
 async def request_reset(user: PasswordResetRequest):
     email = user.email
@@ -240,7 +215,6 @@ async def verify_otp(data: OTPVerify):
 
     return {"message": "OTP verified. You can now reset your password."}
 
-
 @app.post("/reset-password")
 async def reset_password(data: ResetPassword):
     email = data.email
@@ -266,43 +240,75 @@ async def reset_password(data: ResetPassword):
 
     return {"message": "Password successfully reset"}
 
-
-@app.post('/create-build')
-async def create_build(build_data: BuildCreateSchema, request: Request):
-    # Verify user token and get UID
-    headers = request.headers
-    jwt = headers.get('authorization')  # Note: Corrected typo from 'autherization'
+@app.post('/create-build',
+          summary="Create a new PC build",
+          description="Create a new PC build with selected components. Requires authentication.",
+          response_description="Returns the created build ID",
+          status_code=status.HTTP_201_CREATED,
+          responses={
+              401: {"description": "Invalid or missing authentication token"},
+              500: {"description": "Internal server error"}
+          })
+async def create_build(
+    build_data: BuildCreateSchema,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Create a new PC build for the authenticated user.
     
-    if not jwt:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization token missing"
-        )
+    Requires:
+    - Valid JWT token in Authorization header (Bearer token)
+    - Component document IDs for all required parts
+    
+    Returns:
+    - Success message with the new build ID
+    """
+    jwt = credentials.credentials
     
     try:
         # Verify the token and get user UID
         decoded_token = auth.verify_id_token(jwt)
         user_uid = decoded_token['uid']
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        )
     except Exception as e:
         raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
         )
-    
+
+    # Validate all component references exist
+    component_refs = {
+        "cpu": build_data.components.cpu,
+        "gpu": build_data.components.gpu,
+        "motherboard": build_data.components.motherboard,
+        "ram": build_data.components.ram,
+        "storage": build_data.components.storage,
+        "cooling": build_data.components.cooling,
+        "psu": build_data.components.psu,
+        "case": build_data.components.case
+    }
+
+    # Check all components exist before creating the build
+    for component_type, component_id in component_refs.items():
+        doc_ref = db.collection(component_type).document(component_id)
+        if not doc_ref.get().exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid {component_type} ID: {component_id}"
+            )
+
     # Prepare the build data with Firestore references
     build_dict = {
         "name": build_data.name,
         "description": build_data.description,
         "createdAt": datetime.now(),
         "components": {
-            "cpu": db.collection("cpu").document(build_data.components.cpu),
-            "gpu": db.collection("gpu").document(build_data.components.gpu),
-            "motherboard": db.collection("motherboard").document(build_data.components.motherboard),
-            "ram": db.collection("ram").document(build_data.components.ram),
-            "storage": db.collection("storage").document(build_data.components.storage),
-            "cooling": db.collection("cooling").document(build_data.components.cooling),
-            "psu": db.collection("psu").document(build_data.components.psu),
-            "case": db.collection("case").document(build_data.components.case)
+            component_type: db.collection(component_type).document(component_id)
+            for component_type, component_id in component_refs.items()
         }
     }
     
@@ -311,20 +317,17 @@ async def create_build(build_data: BuildCreateSchema, request: Request):
         builds_ref = db.collection("users").document(user_uid).collection("builds")
         new_build_ref = builds_ref.add(build_dict)
         
-        return JSONResponse(
-            content={
-                "message": "Build created successfully",
-                "build_id": new_build_ref[1].id
-            },
-            status_code=201
-        )
+        return {
+            "message": "Build created successfully",
+            "build_id": new_build_ref[1].id,
+            "user_id": user_uid
+        }
     except Exception as e:
         print(f"Error creating build: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to create build"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create build in database"
         )
-    
 
 @app.get('/get-builds')
 async def get_user_builds(request: Request):
@@ -378,17 +381,8 @@ async def get_user_builds(request: Request):
             status_code=500,
             detail="Failed to retrieve builds"
         )
-=======
-
-
->>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 #################################################################################################################
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
     uvicorn.run("main:app", reload=True, host="0.0.0.0", port=5049)
-=======
-    uvicorn.run("main:app", reload=True, host="127.0.0.1", port=5049)
-
->>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
