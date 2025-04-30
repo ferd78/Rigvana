@@ -1,7 +1,7 @@
 from fastapi import FastAPI # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
-from firebase_admin import credentials, auth # type: ignore
+from firebase_admin import credentials, auth, firestore # type: ignore
 import pyrebase # type: ignore
 from pydantic import BaseModel # type: ignore
 from fastapi.responses import JSONResponse # type: ignore
@@ -15,22 +15,21 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 import traceback
-from google.cloud import firestore
 
 
-
-db = firestore.Client()
+# For firebase configs
 
 app = FastAPI(
     description="RigVana's backend",
     title="Rigvana Backend"
 )
 
-# For firebase configs
 
 if not firebase_admin._apps:
     cred = credentials.Certificate("nuclearlaunchcode.json")
     firebase_admin.initialize_app(cred)
+    db = firestore.client()
+
 
 
 firebase_config = {
@@ -79,6 +78,21 @@ class ResetPassword(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     email: str
+
+class ComponentReferences(BaseModel):
+    cpu: str
+    gpu: str
+    motherboard: str
+    ram: str
+    storage: str
+    cooling: str
+    psu: str
+    case: str
+
+class BuildCreateSchema(BaseModel):
+    name: str
+    description: str
+    components: ComponentReferences
 
 #################################################################################################################
 
@@ -223,8 +237,121 @@ async def reset_password(data: ResetPassword):
     otp_store.pop(email, None)
 
     return {"message": "Password successfully reset"}
+
+
+@app.post('/create-build')
+async def create_build(build_data: BuildCreateSchema, request: Request):
+    # Verify user token and get UID
+    headers = request.headers
+    jwt = headers.get('authorization')  # Note: Corrected typo from 'autherization'
+    
+    if not jwt:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization token missing"
+        )
+    
+    try:
+        # Verify the token and get user UID
+        decoded_token = auth.verify_id_token(jwt)
+        user_uid = decoded_token['uid']
+    except Exception as e:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+    
+    # Prepare the build data with Firestore references
+    build_dict = {
+        "name": build_data.name,
+        "description": build_data.description,
+        "createdAt": datetime.now(),
+        "components": {
+            "cpu": db.collection("cpu").document(build_data.components.cpu),
+            "gpu": db.collection("gpu").document(build_data.components.gpu),
+            "motherboard": db.collection("motherboard").document(build_data.components.motherboard),
+            "ram": db.collection("ram").document(build_data.components.ram),
+            "storage": db.collection("storage").document(build_data.components.storage),
+            "cooling": db.collection("cooling").document(build_data.components.cooling),
+            "psu": db.collection("psu").document(build_data.components.psu),
+            "case": db.collection("case").document(build_data.components.case)
+        }
+    }
+    
+    try:
+        # Add the build to the user's builds subcollection
+        builds_ref = db.collection("users").document(user_uid).collection("builds")
+        new_build_ref = builds_ref.add(build_dict)
+        
+        return JSONResponse(
+            content={
+                "message": "Build created successfully",
+                "build_id": new_build_ref[1].id
+            },
+            status_code=201
+        )
+    except Exception as e:
+        print(f"Error creating build: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create build"
+        )
+    
+
+@app.get('/get-builds')
+async def get_user_builds(request: Request):
+    # Verify user token and get UID
+    headers = request.headers
+    jwt = headers.get('authorization')
+    
+    if not jwt:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization token missing"
+        )
+    
+    try:
+        decoded_token = auth.verify_id_token(jwt)
+        user_uid = decoded_token['uid']
+    except Exception as e:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+    
+    try:
+        # Get all builds for the user
+        builds_ref = db.collection("users").document(user_uid).collection("builds")
+        builds = builds_ref.stream()
+        
+        build_list = []
+        for build in builds:
+            build_data = build.to_dict()
+            # Convert references to component IDs for response
+            components = {}
+            for category, ref in build_data['components'].items():
+                components[category] = ref.id
+            
+            build_list.append({
+                "id": build.id,
+                "name": build_data['name'],
+                "description": build_data['description'],
+                "createdAt": build_data['createdAt'].isoformat(),
+                "components": components
+            })
+        
+        return JSONResponse(
+            content=build_list,
+            status_code=200
+        )
+    except Exception as e:
+        print(f"Error retrieving builds: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve builds"
+        )
 #################################################################################################################
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", reload=True, host="127.0.0.1", port=5049)
+    uvicorn.run("main:app", reload=True, host="0.0.0.0", port=5049)
