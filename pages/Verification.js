@@ -27,7 +27,7 @@ function Verification() {
         }
 
         try {
-            const response = await fetch("http://192.168.56.1:5049/verify-otp", {
+            const response = await fetch("http://192.168.0.200:5049/verify-otp", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp: enteredOtp }),
