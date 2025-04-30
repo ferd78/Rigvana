@@ -5,6 +5,9 @@ import InputField from "../components/InputField";
 import LoginButton from "../components/LoginButton";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useState } from "react";
+import { HARMAN_URL } from "../ipconfig";
+import { FELIX_URL } from "../ipconfig";
+
 
 function SetNewPassword() {
     const nav = useNavigation();
@@ -29,7 +32,7 @@ function SetNewPassword() {
         }
 
         try {
-            const response = await fetch("http://192.168.56.1:5049/reset-password", {
+            const response = await fetch(`${FELIX_URL}/reset-password`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp, new_password: password }),
