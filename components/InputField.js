@@ -22,7 +22,7 @@ function InputField({ label, value, onChangeText, secureTextEntry }) {
                     <Ionicons
                         name={isPasswordVisible ? "eye" : "eye-off"}
                         size={20}
-                        color="white"
+                        color="white"  
                     />
                 </Pressable>
             )}

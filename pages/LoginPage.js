@@ -13,7 +13,7 @@ function LoginPage() {
 
     const handleLogin = async () => {
         try {
-            const response = await fetch("http://192.168.0.200:5049/login", {
+            const response = await fetch("http://192.168.56.1:5049/login", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -53,7 +53,7 @@ function LoginPage() {
                 <InputField label="Password" value={password} onChangeText={setPassword} secureTextEntry />
 
                 <View className="self-end pr-10 mt-2">
-                    <Text className="underline font-helvetica-bold text-white">
+                    <Text className="underline font-helvetica-bold text-white" onPress={() => nav.navigate("ForgotPassword")}>
                         Forgot Password?
                     </Text>
                 </View>
