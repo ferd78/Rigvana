@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from fastapi import FastAPI # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
@@ -18,6 +19,17 @@ import traceback
 
 
 # For firebase configs
+=======
+from fastapi import FastAPI
+import uvicorn
+import firebase_admin
+from firebase_admin import credentials, auth
+import pyrebase
+from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException
+from fastapi.requests import Request
+>>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 
 app = FastAPI(
     description="RigVana's backend",
@@ -28,8 +40,11 @@ app = FastAPI(
 if not firebase_admin._apps:
     cred = credentials.Certificate("nuclearlaunchcode.json")
     firebase_admin.initialize_app(cred)
+<<<<<<< HEAD
     db = firestore.client()
 
+=======
+>>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 
 
 firebase_config = {
@@ -47,6 +62,7 @@ firebase_config = {
 firebase = pyrebase.initialize_app(firebase_config)
 
 
+<<<<<<< HEAD
 # for reset pass otp
 env_path = Path(__file__).parent / "email.env"
 load_dotenv(dotenv_path=env_path)
@@ -56,6 +72,8 @@ otp_store: Dict[str, Dict[str, str]] = {}
 
 
 
+=======
+>>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 ######################################################### SCHEMAS ############################################
 
 class SignupSchema(BaseModel):
@@ -67,6 +85,7 @@ class LoginSchema(BaseModel):
     email: str
     password: str
 
+<<<<<<< HEAD
 class OTPVerify(BaseModel):
     email: str
     otp: str
@@ -113,6 +132,14 @@ def send_email(to_email: str, content: str):
         raise HTTPException(status_code=500, detail="Failed to send email")
 
 ######################################################### ENPOINTS ############################################
+=======
+
+#################################################################################################################
+
+
+
+######################################################### ENDPOINTS ############################################
+>>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 
 @app.get("/")
 async def root():
@@ -178,6 +205,7 @@ async def validate_token(request: Request):
 
     return user.uid
 
+<<<<<<< HEAD
 @app.post("/request-password-reset")
 async def request_reset(user: PasswordResetRequest):
     email = user.email
@@ -350,8 +378,17 @@ async def get_user_builds(request: Request):
             status_code=500,
             detail="Failed to retrieve builds"
         )
+=======
+
+
+>>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
 #################################################################################################################
 
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     uvicorn.run("main:app", reload=True, host="0.0.0.0", port=5049)
+=======
+    uvicorn.run("main:app", reload=True, host="127.0.0.1", port=5049)
+
+>>>>>>> b2024ae856e1cec60a8afde5ca10309399e9cab7
