@@ -11,6 +11,7 @@ module.exports = {
       colors: {
         semiblack: "#1B1B1B",
         ymblue: "#B6CFF8",
+        almostblack: "#0E0909",
       },
       fontFamily: {
         jura: ['Jura'],

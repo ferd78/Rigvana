@@ -10,6 +10,8 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Verification from "./pages/Verification";
 import SetNewPassword from "./pages/SetNewPassword";
 import * as SplashScreen from 'expo-splash-screen';
+import BottomTabs from "./navigation/BottomTabs";
+
 const Stack = createNativeStackNavigator();
 
 SplashScreen.preventAutoHideAsync(); 
@@ -37,6 +39,7 @@ function App() {
           <Stack.Screen name="ForgotPassword" component={ForgotPassword} options={{ headerShown: false}}/>
           <Stack.Screen name="SetNewPassword" component={SetNewPassword} options={{ headerShown: false}}/>
           <Stack.Screen name="Verification" component={Verification} options={{ headerShown: false}}/>
+          <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
         </Stack.Navigator>
       </NavigationContainer>
   );

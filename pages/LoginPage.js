@@ -28,7 +28,7 @@ function LoginPage() {
             if (response.ok) {
                 // Save token securely with AsyncStorage or SecureStore in production
                 console.log("Login successful! Token:", data.token);
-                nav.navigate("Home");
+                nav.navigate("MainTabs");
             } else {
                 Alert.alert("Login Failed", data.detail || "Unknown error");
             }
