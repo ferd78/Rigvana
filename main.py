@@ -31,8 +31,9 @@ app = FastAPI(
 if not firebase_admin._apps:
     cred = credentials.Certificate("nuclearlaunchcode.json")
     firebase_admin.initialize_app(cred)
-    db = firestore.client()
 
+
+db = firestore.client()
 
 
 firebase_config = {
@@ -96,6 +97,12 @@ class BuildCreateSchema(BaseModel):
     name: str
     description: str
     components: ComponentReferences
+
+
+class UserProfile(BaseModel):
+    name: str
+    description: str
+    profile_picture_url: str
 
 #################################################################################################################
 
@@ -414,6 +421,86 @@ async def get_components(component_type: str):
             status_code=500,
             detail=f"Failed to retrieve {component_type} components"
         )
+    
+@app.delete("/delete-build/{build_id}",
+            summary="Delete a user's build",
+            description="Deletes a specific PC build for the authenticated user.",
+            response_description="Confirmation of deletion")
+
+
+async def delete_build(
+    build_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        build_ref = db.collection("users").document(user_uid).collection("builds").document(build_id)
+        build_snapshot = build_ref.get()
+
+        if not build_snapshot.exists:
+            raise HTTPException(status_code=404, detail="Build not found")
+
+        build_ref.delete()
+
+        return {"message": f"Build {build_id} successfully deleted"}
+    except Exception as e:
+        print(f"Error deleting build: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete build")
+
+@app.post('/set-profile', summary="Set or update user profile")
+async def set_profile(
+    profile_data: UserProfile,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        user_ref = db.collection("users").document(user_uid)
+        user_ref.set({
+            "profile": profile_data.dict()
+        }, merge=True)
+
+        return {"message": "Profile updated successfully"}
+    except Exception as e:
+        print(f"Error updating profile: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user profile")
+    
+
+
+@app.get('/get-profile', summary="Fetch user profile")
+async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        user_email = decoded_token.get('email', '')  # Safely get the email
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        user_doc = db.collection("users").document(user_uid).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user_data = user_doc.to_dict()
+        profile = user_data.get("profile", {})
+
+        # Add the email to the response
+        profile["email"] = user_email
+
+        return profile
+    except Exception as e:
+        print(f"Error fetching profile: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve profile")
+
 #################################################################################################################
 
 
