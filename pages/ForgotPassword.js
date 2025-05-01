@@ -5,6 +5,8 @@ import InputField from "../components/InputField";
 import LoginButton from "../components/LoginButton";
 import { useNavigation } from "@react-navigation/native";
 import { useState } from "react";
+import { FELIX_URL } from "../ipconfig";
+import { HARMAN_URL } from "../ipconfig";
 
 
 function ForgotPassword(){
@@ -23,7 +25,7 @@ function ForgotPassword(){
         }
     
         try {
-            const response = await fetch("http://192.168.0.200:5049/request-password-reset", {
+            const response = await fetch(`${FELIX_URL}/request-password-reset`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email }),
