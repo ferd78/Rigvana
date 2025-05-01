@@ -1,5 +1,5 @@
 import datetime
-from fastapi import FastAPI # type: ignore
+from fastapi import FastAPI, Depends, HTTPException, status # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
 from firebase_admin import credentials, auth, firestore # type: ignore
@@ -14,11 +14,11 @@ import smtplib
 from email.message import EmailMessage
 import os
 from dotenv import load_dotenv
-from pathlib import Path
+from pathlib import Path as FilePath
 import traceback
-from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
+from fastapi import Path
 
 # For firebase configs
 
@@ -51,7 +51,7 @@ firebase = pyrebase.initialize_app(firebase_config)
 
 
 # for reset pass otp
-env_path = Path(__file__).parent / "email.env"
+env_path = FilePath(__file__).parent / "email.env"
 load_dotenv(dotenv_path=env_path)
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
@@ -380,6 +380,39 @@ async def get_user_builds(request: Request):
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve builds"
+        )
+    
+
+@app.get('/get-components/{component_type}',
+         summary="Fetch all components of a specific type",
+         description="Returns all documents in the specified component category (e.g., cpu, gpu, motherboard).",
+         response_description="List of components")
+async def get_components(component_type: str):
+    valid_types = ["cpu", "gpu", "motherboard", "ram", "storage", "cooling", "psu", "case"]
+
+    if component_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid component type '{component_type}'. Must be one of: {', '.join(valid_types)}"
+        )
+
+    try:
+        components_ref = db.collection(component_type)
+        components = components_ref.stream()
+
+        component_list = []
+        for doc in components:
+            data = doc.to_dict()
+            data["id"] = doc.id  # include document ID
+            component_list.append(data)
+
+        return JSONResponse(content=component_list, status_code=200)
+
+    except Exception as e:
+        print(f"Error retrieving {component_type}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve {component_type} components"
         )
 #################################################################################################################
 
