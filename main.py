@@ -19,6 +19,7 @@ import traceback
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
 from fastapi import Path
+from fastapi.middleware.cors import CORSMiddleware
 
 # For firebase configs
 
@@ -60,6 +61,17 @@ otp_store: Dict[str, Dict[str, str]] = {}
 
 
 security = HTTPBearer()
+
+
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods 
+    allow_headers=["*"],  # Allows all headers 
+)
 ######################################################### SCHEMAS ############################################
 
 class SignupSchema(BaseModel):
@@ -338,24 +350,23 @@ async def create_build(
 
 @app.get('/get-builds')
 async def get_user_builds(request: Request):
-    # Verify user token and get UID
     headers = request.headers
-    jwt = headers.get('authorization')
+    auth_header = headers.get('authorization')
+    print(f"Received auth header: {auth_header}")  # Debug log
     
-    if not jwt:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization token missing"
-        )
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Authorization token missing")
+    
+    
+    jwt = auth_header.replace("Bearer ", "")  
+    print(f"Extracted JWT: {jwt}")  # Debug log
     
     try:
         decoded_token = auth.verify_id_token(jwt)
+        print(f"Decoded token: {decoded_token}")  # Debug log
         user_uid = decoded_token['uid']
     except Exception as e:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token"
-        )
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
     try:
         # Get all builds for the user

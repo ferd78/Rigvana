@@ -6,6 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import { FELIX_URL } from "../ipconfig";
 import { HARMAN_URL } from "../ipconfig";
 import "../global.css";
+import { setToken } from '../utils/auth'; 
 
 function LoginPage() {
     const nav = useNavigation();
@@ -13,30 +14,29 @@ function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
 
+    
+
     const handleLogin = async () => {
         try {
-            const response = await fetch(`${FELIX_URL}/login`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ email, password }),
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                // Save token securely with AsyncStorage or SecureStore in production
-                console.log("Login successful! Token:", data.token);
-                nav.navigate("MainTabs");
-            } else {
-                Alert.alert("Login Failed", data.detail || "Unknown error");
-            }
+          const response = await fetch(`${HARMAN_URL}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+      
+          const data = await response.json();
+      
+          if (response.ok) {
+            await setToken(data.token); // Use helper instead of direct AsyncStorage
+            nav.navigate("MainTabs");
+          } else {
+            Alert.alert("Login Failed", data.detail || "Unknown error");
+          }
         } catch (error) {
-            console.error("Login error:", error);
-            Alert.alert("Network Error", "Could not connect to backend.");
+          console.error("Login error:", error);
+          Alert.alert("Network Error", "Could not connect to backend.");
         }
-    };
+      };
 
     return (
         <View className="h-full bg-semiblack">
