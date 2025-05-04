@@ -23,7 +23,7 @@ function Register() {
         }
 
         try {
-            const response = await fetch(`${HARMAN_URL}/signup`, {
+            const response = await fetch(`${FELIX_URL}/signup`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

@@ -32,7 +32,7 @@ function SetNewPassword() {
         }
 
         try {
-            const response = await fetch(`${HARMAN_URL}/reset-password`, {
+            const response = await fetch(`${FELIX_URL}/reset-password`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp, new_password: password }),
