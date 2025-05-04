@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import "../global.css";
 import { HARMAN_URL } from "../ipconfig";
-import { FELIX_URL } from "../ipconfig";
+import { NICO_URL } from "../ipconfig";
 import { getToken } from '../utils/auth';
 import RefreshButton from "../components/RefreshButton";
 
@@ -64,7 +64,7 @@ function Home() {
       const fetchComponents = async () => {
         setLoadingComponents(true);
         try {
-          const response = await fetch(`${FELIX_URL}/get-components/${selectedSlot}`, {
+          const response = await fetch(`${NICO_URL}/get-components/${selectedSlot}`, {
             headers: {
               "Authorization": `Bearer ${userToken}`,
             },
@@ -110,7 +110,7 @@ function Home() {
 
       
       setRefreshing(true);
-      const response = await fetch(`${FELIX_URL}/get-builds`, {
+      const response = await fetch(`${NICO_URL}/get-builds`, {
         headers: {
           "Authorization": `Bearer ${userToken}`,
         },
@@ -145,7 +145,7 @@ function Home() {
   const handleDeleteBuild = async (buildId) => {
     try {
       setLoading(true);
-      const response = await fetch(`${FELIX_URL}/delete-build/${buildId}`, {
+      const response = await fetch(`${NICO_URL}/delete-build/${buildId}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${userToken}`,
@@ -195,7 +195,7 @@ function Home() {
         }, {})
       };
 
-      const response = await fetch(`${FELIX_URL}/create-build`, {
+      const response = await fetch(`${NICO_URL}/create-build`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${userToken}`,

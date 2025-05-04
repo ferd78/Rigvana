@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import InputField from "../components/InputField";
 import LoginButton from "../components/LoginButton";
 import { useNavigation } from "@react-navigation/native";
-import { FELIX_URL } from "../ipconfig";
+import { NICO_URL } from "../ipconfig";
 import { HARMAN_URL } from "../ipconfig";
 
 
@@ -23,7 +23,7 @@ function Register() {
         }
 
         try {
-            const response = await fetch(`${FELIX_URL}/signup`, {
+            const response = await fetch(`${NICO_URL}/signup`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
