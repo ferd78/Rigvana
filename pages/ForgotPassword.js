@@ -6,7 +6,8 @@ import LoginButton from "../components/LoginButton";
 import { useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { NICO_URL } from "../ipconfig";
-
+import { FELIX_URL } from "../ipconfig";
+import { HARMAN_URL } from "../ipconfig";
 
 function ForgotPassword(){
     const nav = useNavigation();
@@ -24,7 +25,7 @@ function ForgotPassword(){
         }
     
         try {
-            const response = await fetch(`${NICO_URL}/request-password-reset`, {
+            const response = await fetch(`${FELIX_URL}/request-password-reset`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email }),
