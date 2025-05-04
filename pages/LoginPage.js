@@ -3,8 +3,8 @@ import { Text, View, Alert } from "react-native";
 import InputField from "../components/InputField";
 import LoginButton from "../components/LoginButton";
 import { useNavigation } from "@react-navigation/native";
-import { FELIX_URL } from "../ipconfig";
 import { HARMAN_URL } from "../ipconfig";
+import { NICO_URL } from "../ipconfig";
 import "../global.css";
 import { setToken } from '../utils/auth'; 
 
@@ -18,7 +18,7 @@ function LoginPage() {
 
     const handleLogin = async () => {
         try {
-          const response = await fetch(`${HARMAN_URL}/login`, {
+          const response = await fetch(`${NICO_URL}/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, password }),
