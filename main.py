@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt  
 from fastapi import FastAPI, Depends, HTTPException, status # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
@@ -50,7 +50,7 @@ firebase_config = {
 
 
 firebase = pyrebase.initialize_app(firebase_config)
-
+revoked_tokens_ref = db.collection('revoked_tokens')
 
 # for reset pass otp
 env_path = FilePath(__file__).parent / "email.env"
@@ -258,6 +258,49 @@ async def reset_password(data: ResetPassword):
     otp_store.pop(email, None)
 
     return {"message": "Password successfully reset"}
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    # Check if token is revoked
+    doc = revoked_tokens_ref.document(token).get()
+    if doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked"
+        )
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return {
+            'uid': decoded_token['uid'],
+            'token': token  # Include both uid and token
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials"
+        )
+
+@app.post('/logout')
+async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        # First verify the token to get user info
+        decoded_token = auth.verify_id_token(token)
+        uid = decoded_token['uid']
+        
+        # Store the revoked token with an expiration time
+        expires_at = dt.datetime.now() + dt.timedelta(hours=1)
+        revoked_tokens_ref.document(token).set({
+            'uid': uid,
+            'revoked_at': dt.datetime.now(),
+            'expires_at': expires_at
+        })
+        return {"message": "Successfully logged out"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 @app.post('/create-build',
           summary="Create a new PC build",
