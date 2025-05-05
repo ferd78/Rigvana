@@ -391,25 +391,24 @@ async def create_build(
             detail="Failed to create build in database"
         )
 
-@app.get('/get-builds')
-async def get_user_builds(request: Request):
-    headers = request.headers
-    auth_header = headers.get('authorization')
-    print(f"Received auth header: {auth_header}")  # Debug log
-    
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Authorization token missing")
-    
-    
-    jwt = auth_header.replace("Bearer ", "")  
-    print(f"Extracted JWT: {jwt}")  # Debug log
-    
+@app.get('/get-builds',
+         summary="Get all builds for the authenticated user",
+         description="Returns a list of all PC builds belonging to the current user",
+         response_description="List of user's builds")
+async def get_user_builds(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     try:
+        # Verify the token using the HTTPBearer dependency
+        jwt = credentials.credentials
         decoded_token = auth.verify_id_token(jwt)
-        print(f"Decoded token: {decoded_token}")  # Debug log
         user_uid = decoded_token['uid']
     except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        print(f"Token verification error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
     
     try:
         # Get all builds for the user
@@ -439,7 +438,7 @@ async def get_user_builds(request: Request):
     except Exception as e:
         print(f"Error retrieving builds: {str(e)}")
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve builds"
         )
     
@@ -482,6 +481,182 @@ async def get_components(component_type: str):
             response_description="Confirmation of deletion")
 
 
+
+@app.get('/get-certain-build/{build_id}',
+         summary="Get detailed information about a specific build",
+         description="Returns all information about a specific build including component details",
+         response_description="Detailed build information with components")
+async def get_certain_build_details(
+    build_id: str = Path(..., description="The ID of the build to retrieve"),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Get detailed information about a specific build, including all component data.
+    
+    Requires:
+    - Valid JWT token in Authorization header (Bearer token)
+    - Build ID that belongs to the authenticated user
+    
+    Returns:
+    - Complete build information with expanded component details
+    """
+    try:
+        # Verify the token and get user UID
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+
+    try:
+        # Get the build document
+        build_ref = db.collection("users").document(user_uid).collection("builds").document(build_id)
+        build_doc = build_ref.get()
+        
+        if not build_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Build not found"
+            )
+            
+        build_data = build_doc.to_dict()
+        
+        # Prepare response with basic build info
+        response = {
+            "id": build_doc.id,
+            "name": build_data['name'],
+            "description": build_data['description'],
+            "createdAt": build_data['createdAt'].isoformat(),
+            "components": {}
+        }
+        
+        # Fetch details for each component
+        for component_type, component_ref in build_data['components'].items():
+            component_doc = component_ref.get()
+            if component_doc.exists:
+                component_data = component_doc.to_dict()
+                component_data['id'] = component_ref.id
+                response['components'][component_type] = component_data
+            else:
+                response['components'][component_type] = {
+                    "error": "Component not found",
+                    "id": component_ref.id
+                }
+        
+        return JSONResponse(content=response, status_code=200)
+        
+    except Exception as e:
+        print(f"Error retrieving build details: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve build details"
+        )
+    
+
+@app.put('/update-build/{build_id}',
+         summary="Update an existing build",
+         description="Update the name, description, or components of an existing build",
+         response_description="Confirmation of update",
+         status_code=status.HTTP_200_OK)
+async def update_build(
+    build_id: str = Path(..., description="The ID of the build to update"),
+    build_data: BuildCreateSchema = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Update an existing PC build for the authenticated user.
+    
+    Requires:
+    - Valid JWT token in Authorization header (Bearer token)
+    - Build ID that belongs to the authenticated user
+    
+    Optional:
+    - New name
+    - New description
+    - New component references
+    
+    Returns:
+    - Success message
+    """
+    try:
+        # Verify the token and get user UID
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+
+    try:
+        # Get the build document reference
+        build_ref = db.collection("users").document(user_uid).collection("builds").document(build_id)
+        build_doc = build_ref.get()
+        
+        if not build_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Build not found"
+            )
+            
+        # Prepare update data
+        update_data = {}
+        
+        if build_data.name is not None:
+            update_data['name'] = build_data.name
+            
+        if build_data.description is not None:
+            update_data['description'] = build_data.description
+            
+        if build_data.components is not None:
+            # Validate all new component references exist
+            component_refs = {
+                "cpu": build_data.components.cpu,
+                "gpu": build_data.components.gpu,
+                "motherboard": build_data.components.motherboard,
+                "ram": build_data.components.ram,
+                "storage": build_data.components.storage,
+                "cooling": build_data.components.cooling,
+                "psu": build_data.components.psu,
+                "case": build_data.components.case
+            }
+            
+            for component_type, component_id in component_refs.items():
+                doc_ref = db.collection(component_type).document(component_id)
+                if not doc_ref.get().exists:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid {component_type} ID: {component_id}"
+                    )
+            
+            # Convert component IDs to Firestore references
+            update_data['components'] = {
+                component_type: db.collection(component_type).document(component_id)
+                for component_type, component_id in component_refs.items()
+            }
+        
+        # Only update if there's something to update
+        if update_data:
+            build_ref.update(update_data)
+        
+        return {
+            "message": "Build updated successfully",
+            "build_id": build_id
+        }
+        
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
+    except Exception as e:
+        print(f"Error updating build: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update build"
+        )
+
+
+
 async def delete_build(
     build_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -505,6 +680,8 @@ async def delete_build(
     except Exception as e:
         print(f"Error deleting build: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete build")
+
+
 
 @app.post('/set-profile', summary="Set or update user profile")
 async def set_profile(
