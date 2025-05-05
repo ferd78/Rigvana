@@ -25,7 +25,7 @@ function ForgotPassword(){
         }
     
         try {
-            const response = await fetch(`${FELIX_URL}/request-password-reset`, {
+            const response = await fetch(`${NICO_URL}/request-password-reset`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email }),

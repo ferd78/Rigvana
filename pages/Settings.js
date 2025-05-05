@@ -19,7 +19,7 @@ function Settings() {
                 return;
             }
 
-            const response = await fetch(`${FELIX_URL}/logout`, {
+            const response = await fetch(`${NICO_URL}/logout`, {
                 method: "POST",
                 headers: { 
                     "Content-Type": "application/json",

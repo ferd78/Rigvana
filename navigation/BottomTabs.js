@@ -4,8 +4,8 @@ import { FELIX_URL } from "../ipconfig";
 import { HARMAN_URL } from "../ipconfig";
 import MapPage from "../pages/MapPage";
 import Home from "../pages/Home";
-import ForumPage from "../pages/ForumPage";
 import ProfilePage from "../pages/Profile";
+import ForumStack from "./ForumStack";
 
 
 const Tab = createBottomTabNavigator();
@@ -38,8 +38,8 @@ function BottomTabs(){
         })}
         >
       <Tab.Screen name="Home" component={Home} />
-      <Tab.Screen name="Forum" component={ForumPage} />
       <Tab.Screen name="Map" component={MapPage} />
+      <Tab.Screen name="Forum" component={ForumStack} />
       <Tab.Screen name="Profile" component={ProfilePage}/>
     </Tab.Navigator>
     );

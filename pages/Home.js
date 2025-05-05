@@ -16,7 +16,7 @@ import AddNewButton from "../components/AddNewButton";
 import RefreshButton from "../components/RefreshButton";
 import { Ionicons } from "@expo/vector-icons";
 import "../global.css";
-import { FELIX_URL } from "../ipconfig";
+import { NICO_URL } from "../ipconfig";
 import { getToken } from "../utils/auth";
 
 const COMPONENT_SLOTS = [
@@ -72,7 +72,7 @@ export default function Home() {
     if (!tokenRef.current) return;
     setRefreshing(true);
     try {
-      const res = await fetch(`${FELIX_URL}/get-builds`, {
+      const res = await fetch(`${NICO_URL}/get-builds`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -92,7 +92,7 @@ export default function Home() {
         setLoadingComponents(true);
         try {
           const res = await fetch(
-            `${FELIX_URL}/get-components/${selectedSlot}`,
+            `${NICO_URL}/get-components/${selectedSlot}`,
             { headers: { Authorization: `Bearer ${userToken}` } }
           );
           if (!res.ok) throw new Error();
@@ -148,8 +148,8 @@ export default function Home() {
       ),
     };
     const url = isEdit
-      ? `${FELIX_URL}/update-build/${pcBuilds[editingIndex]?.id}`
-      : `${FELIX_URL}/create-build`;
+      ? `${NICO_URL}/update-build/${pcBuilds[editingIndex]?.id}`
+      : `${NICO_URL}/create-build`;
     const method = isEdit ? "PUT" : "POST";
 
     try {
@@ -187,7 +187,7 @@ export default function Home() {
     setLoading(true);
     try {
       const id = pcBuilds[selectedBuildIndex]?.id;
-      const res = await fetch(`${FELIX_URL}/delete-build/${id}`, {
+      const res = await fetch(`${NICO_URL}/delete-build/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
@@ -206,7 +206,7 @@ export default function Home() {
     setActionModalVisible(false);
     const id = pcBuilds[selectedBuildIndex]?.id;
     try {
-      const res = await fetch(`${FELIX_URL}/get-certain-build/${id}`, {
+      const res = await fetch(`${NICO_URL}/get-certain-build/${id}`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -223,7 +223,7 @@ export default function Home() {
     setActionModalVisible(false);
     const id = pcBuilds[selectedBuildIndex]?.id;
     try {
-      const res = await fetch(`${FELIX_URL}/get-certain-build/${id}`, {
+      const res = await fetch(`${NICO_URL}/get-certain-build/${id}`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
