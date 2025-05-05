@@ -480,6 +480,30 @@ async def get_components(component_type: str):
             description="Deletes a specific PC build for the authenticated user.",
             response_description="Confirmation of deletion")
 
+async def delete_build(
+    build_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        build_ref = db.collection("users").document(user_uid).collection("builds").document(build_id)
+        build_snapshot = build_ref.get()
+
+        if not build_snapshot.exists:
+            raise HTTPException(status_code=404, detail="Build not found")
+
+        build_ref.delete()
+
+        return {"message": f"Build {build_id} successfully deleted"}
+    except Exception as e:
+        print(f"Error deleting build: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete build")
+
 
 
 @app.get('/get-certain-build/{build_id}',
@@ -656,30 +680,6 @@ async def update_build(
         )
 
 
-
-async def delete_build(
-    build_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    try:
-        decoded_token = auth.verify_id_token(credentials.credentials)
-        user_uid = decoded_token['uid']
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    try:
-        build_ref = db.collection("users").document(user_uid).collection("builds").document(build_id)
-        build_snapshot = build_ref.get()
-
-        if not build_snapshot.exists:
-            raise HTTPException(status_code=404, detail="Build not found")
-
-        build_ref.delete()
-
-        return {"message": f"Build {build_id} successfully deleted"}
-    except Exception as e:
-        print(f"Error deleting build: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete build")
 
 
 
