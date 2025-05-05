@@ -19,6 +19,9 @@ module.exports = {
         helvetica: ['Helvetica'],
         'helvetica-bold': ['HelveticaBold']
       },
+      width: {
+        "9/10" : "90%"
+      }
     },
   },
   plugins: [],

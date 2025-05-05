@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import BackArrow from "../components/BackArrow";
 import LogoutButton from "../components/LogoutButton";
 import { useNavigation } from "@react-navigation/native";
-import { HARMAN_URL } from "../ipconfig";
+import { FELIX_URL, HARMAN_URL, NICO_URL } from "../ipconfig";
 import { getToken, clearToken } from '../utils/auth';
 
 function Settings() {
@@ -19,7 +19,7 @@ function Settings() {
                 return;
             }
 
-            const response = await fetch(`${HARMAN_URL}/logout`, {
+            const response = await fetch(`${FELIX_URL}/logout`, {
                 method: "POST",
                 headers: { 
                     "Content-Type": "application/json",
