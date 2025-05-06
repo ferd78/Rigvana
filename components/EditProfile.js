@@ -1,56 +1,119 @@
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ActivityIndicator, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ProfileModal from "./ProfileModal";
 import PictureModal from "./PictureModal";
-import { Button } from "react-native";
+import { getToken } from '../utils/auth';
+import { HARMAN_URL } from "../ipconfig";
 
-function EditProfile(){
+function EditProfile() {
     const [showModal, setShowModal] = useState(false);
     const [showModal2, setShowModal2] = useState(false);
+    const [profile, setProfile] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [imageError, setImageError] = useState(false);
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            try {
+                const token = await getToken();
+                const response = await fetch(`${HARMAN_URL}/get-profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch profile');
+                }
+                
+                const data = await response.json();
+                setProfile(data);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        
+        fetchProfile();
+    }, []);
+
+    if (loading) {
+        return (
+            <View className="flex-1 justify-center items-center">
+                <ActivityIndicator size="large" color="#ffffff" />
+            </View>
+        );
+    }
+
+    if (error) {
+        return (
+            <View className="flex-1 justify-center items-center">
+                <Text className="text-white">{error}</Text>
+            </View>
+        );
+    }
+
     return (
         <>
-        <View className="flex-row justify-around gap-44 mt-4" >
-            <View>
-                <Text className="text-white text-xl text-helvetica font-bold">
-                    (profile name)
-                </Text>
-                <Text className="text-white text-md ">
-                    (email address)
-                </Text>
+            <View className="flex-row justify-around gap-44 mt-4">
+                <View>
+                    <Text className="text-white text-xl text-helvetica font-bold">
+                        {profile?.name || 'No name set'}
+                    </Text>
+                    <Text className="text-white text-md">
+                        {profile?.email || 'No email set'}
+                    </Text>
 
-                <Text className="mt-8 text-white text-helvetica">
-                    (bio goes here)
-                </Text>
+                    <Text className="mt-8 text-white text-helvetica">
+                        {profile?.description || 'No bio set'}
+                    </Text>
+                </View>
 
-                
+                <Pressable 
+                    onPress={() => setShowModal2(true)}
+                    className="h-16 w-16 rounded-full items-center justify-center overflow-hidden"
+                >
+                    {profile?.profile_picture_url && !imageError ? (
+                        <Image
+                            source={{ uri: profile.profile_picture_url }}
+                            className="h-full w-full"
+                            resizeMode="cover"
+                            onError={() => setImageError(true)}
+                        />
+                    ) : (
+                        <View className="h-full w-full bg-gray-500 items-center justify-center">
+                            <Ionicons name="person" size={28} color="white" />
+                        </View>
+                    )}
+                </Pressable>         
             </View>
 
-            <View className="h-16 w-16 bg-white rounded-full items-center justify-center">
-                <Pressable onPress={() => setShowModal2(true)}>
-                    <Ionicons name="person-add-outline" size={28} color={"black"}/>
-                </Pressable>
-            </View>         
-
-            
-        </View>
-
-        <View className="items-center mt-24">
-            <View className="bg-ymblue h-10 w-9/10 rounded-xl">
-                <Pressable className="flex-1 items-center justify-center" onPress={() => setShowModal(true)}>
-                    <Text className="text-black font-bold text-helvetica text-xl">Edit Profile</Text>
-                </Pressable>
+            <View className="items-center mt-24">
+                <View className="bg-ymblue h-10 w-9/10 rounded-xl">
+                    <Pressable 
+                        className="flex-1 items-center justify-center" 
+                        onPress={() => setShowModal(true)}
+                    >
+                        <Text className="text-black font-bold text-helvetica text-xl">Edit Profile</Text>
+                    </Pressable>
+                </View>
             </View>
-        </View>
 
-        
-        <ProfileModal visible={showModal} onClose={() => setShowModal(false)} />
-        <PictureModal visible={showModal2} onClose={() => setShowModal2(false)}/>
-        {/* <Button title="Edit Profile" onPress={() => setShowModal(true)} /> */}
-        
-
+            <ProfileModal 
+                visible={showModal} 
+                onClose={() => setShowModal(false)}
+                profile={profile}
+                setProfile={setProfile}
+            />
+            <PictureModal 
+                visible={showModal2} 
+                onClose={() => setShowModal2(false)}
+                setProfile={setProfile}
+            />
         </>
-        
     );
 }
 

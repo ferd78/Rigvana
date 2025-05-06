@@ -1,8 +1,8 @@
 import datetime as dt  
-from fastapi import FastAPI, Depends, HTTPException, status # type: ignore
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
-from firebase_admin import credentials, auth, firestore # type: ignore
+from firebase_admin import credentials, auth, firestore, storage# type: ignore
 import pyrebase # type: ignore
 from pydantic import BaseModel # type: ignore
 from fastapi.responses import JSONResponse # type: ignore
@@ -20,7 +20,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime
 from fastapi import Path
 from fastapi.middleware.cors import CORSMiddleware
-
+import uuid
 # For firebase configs
 
 app = FastAPI(
@@ -31,10 +31,14 @@ app = FastAPI(
 
 if not firebase_admin._apps:
     cred = credentials.Certificate("nuclearlaunchcode.json")
-    firebase_admin.initialize_app(cred)
+    firebase_admin.initialize_app(cred, {
+        "storageBucket": "rigvana445.firebasestorage.app"
+    })
+    
 
 
 db = firestore.client()
+
 
 
 firebase_config = {
@@ -48,7 +52,7 @@ firebase_config = {
     "databaseURL": ""
 }
 
-
+bucket = storage.bucket()
 firebase = pyrebase.initialize_app(firebase_config)
 revoked_tokens_ref = db.collection('revoked_tokens')
 
@@ -114,6 +118,9 @@ class BuildCreateSchema(BaseModel):
 class UserProfile(BaseModel):
     name: str
     description: str
+    profile_picture_url: str
+
+class ProfilePictureUpdate(BaseModel):
     profile_picture_url: str
 
 #################################################################################################################
@@ -705,7 +712,77 @@ async def set_profile(
         print(f"Error updating profile: {e}")
         raise HTTPException(status_code=500, detail="Failed to update user profile")
     
+@app.post("/upload-profile-picture")
+async def upload_profile_picture(
+    file: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        print("[DEBUG] Verifying token...")
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        print(f"[DEBUG] Token valid. UID: {user_uid}")
+    except Exception as e:
+        print("[ERROR] Token verification failed.")
+        traceback.print_exc()
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+    try:
+        print(f"[DEBUG] Received file: {file.filename}, content type: {file.content_type}")
+
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/png', 'image/gif']
+        if file.content_type not in allowed_types:
+            print("[ERROR] Invalid file type.")
+            raise HTTPException(status_code=400, detail="Invalid file type")
+
+        # Generate unique filename
+        file_ext = os.path.splitext(file.filename)[1]
+        filename = f"user_profile_pictures/{user_uid}/{uuid.uuid4()}{file_ext}"
+        print(f"[DEBUG] Generated filename: {filename}")
+
+        # Upload to Firebase Storage
+        file_bytes = await file.read()
+        print(f"[DEBUG] File size: {len(file_bytes)} bytes")
+
+        blob = bucket.blob(filename)
+        print(f"[DEBUG] Uploading to bucket: {bucket.name}")
+        blob.upload_from_string(file_bytes, content_type=file.content_type)
+        blob.make_public()
+
+        print(f"[DEBUG] Upload successful. Public URL: {blob.public_url}")
+        return {"url": blob.public_url}
+
+    except Exception as e:
+        print("[ERROR] Exception during file upload.")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to upload profile picture"
+        )
+
+
+@app.post('/update-profile-picture')
+async def update_profile_picture(
+    picture_data: ProfilePictureUpdate,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        user_ref = db.collection("users").document(user_uid)
+        user_ref.set({
+            "profile.picture_url": picture_data.profile_picture_url
+        }, merge=True)
+
+        return {"message": "Profile picture updated successfully"}
+    except Exception as e:
+        print(f"Error updating profile picture: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update profile picture")
 
 @app.get('/get-profile', summary="Fetch user profile")
 async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
