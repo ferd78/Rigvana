@@ -315,6 +315,7 @@ async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
           response_description="Returns the created build ID",
           status_code=status.HTTP_201_CREATED,
           responses={
+              400: {"description": "Component compatibility error"},
               401: {"description": "Invalid or missing authentication token"},
               500: {"description": "Internal server error"}
           })
@@ -323,7 +324,7 @@ async def create_build(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
-    Create a new PC build for the authenticated user.
+    Create a new PC build for the authenticated user with compatibility checks.
     
     Requires:
     - Valid JWT token in Authorization header (Bearer token)
@@ -331,6 +332,7 @@ async def create_build(
     
     Returns:
     - Success message with the new build ID
+    - 400 error if components are incompatible
     """
     jwt = credentials.credentials
     
@@ -349,26 +351,115 @@ async def create_build(
             detail="Could not validate credentials"
         )
 
-    # Validate all component references exist
-    component_refs = {
-        "cpu": build_data.components.cpu,
-        "gpu": build_data.components.gpu,
-        "motherboard": build_data.components.motherboard,
-        "ram": build_data.components.ram,
-        "storage": build_data.components.storage,
-        "cooling": build_data.components.cooling,
-        "psu": build_data.components.psu,
-        "case": build_data.components.case
-    }
-
-    # Check all components exist before creating the build
-    for component_type, component_id in component_refs.items():
+    # Validate all component references exist and get their compatibility data
+    components = {}
+    compatibility_issues = []
+    
+    for component_type, component_id in build_data.components.dict().items():
         doc_ref = db.collection(component_type).document(component_id)
-        if not doc_ref.get().exists:
+        doc = doc_ref.get()
+        
+        if not doc.exists:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid {component_type} ID: {component_id}"
             )
+        
+        components[component_type] = {
+            'id': component_id,
+            'data': doc.to_dict(),
+            'compatibility': doc.to_dict().get('compatibility', {})
+        }
+
+    # Compatibility validation checks
+    # 1. CPU and Motherboard socket match
+    cpu_socket = components['cpu']['compatibility'].get('socket')
+    mobo_socket = components['motherboard']['compatibility'].get('socket')
+    if cpu_socket != mobo_socket:
+        compatibility_issues.append(
+            f"CPU socket ({cpu_socket}) doesn't match motherboard socket ({mobo_socket})"
+        )
+
+    # 2. RAM and Motherboard compatibility
+    ram_type = components['ram']['compatibility'].get('type')
+    mobo_ram_type = components['motherboard']['compatibility'].get('ram_type')
+    if ram_type != mobo_ram_type:
+        compatibility_issues.append(
+            f"RAM type ({ram_type}) doesn't match motherboard supported type ({mobo_ram_type})"
+        )
+
+    # 3. Case and Motherboard form factor
+    case_mobo_support = components['case']['compatibility'].get('motherboard_support', [])
+    mobo_form_factor = components['motherboard']['compatibility'].get('form_factor')
+    if mobo_form_factor not in case_mobo_support:
+        compatibility_issues.append(
+            f"Motherboard form factor ({mobo_form_factor}) not supported by case (supports: {', '.join(case_mobo_support)})"
+        )
+
+    # 4. Cooler and CPU socket
+    cooler_sockets = components['cooling']['compatibility'].get('socket_support', [])
+    if cpu_socket not in cooler_sockets:
+        compatibility_issues.append(
+            f"CPU socket ({cpu_socket}) not supported by cooler (supports: {', '.join(cooler_sockets)})"
+        )
+
+    # 5. Cooler and Case clearance
+    if components['cooling']['compatibility'].get('type') == 'Air Cooler':
+        cooler_height = components['cooling']['compatibility'].get('height', '0mm')
+        case_max_height = components['case']['compatibility'].get('cooler_max_height', '0mm')
+        
+        # Simple numeric comparison (this could be enhanced with proper unit parsing)
+        cooler_num = float(''.join(filter(str.isdigit, cooler_height)))
+        case_num = float(''.join(filter(str.isdigit, case_max_height)))
+        
+        if cooler_num > case_num:
+            compatibility_issues.append(
+                f"Cooler height ({cooler_height}) exceeds case maximum ({case_max_height})"
+            )
+
+    # 6. GPU and Case length
+    gpu_length = components['gpu']['compatibility'].get('length', '0mm')
+    case_max_gpu_length = components['case']['compatibility'].get('gpu_max_length', '0mm')
+    
+    # Simple numeric comparison
+    gpu_num = float(''.join(filter(str.isdigit, gpu_length)))
+    case_gpu_num = float(''.join(filter(str.isdigit, case_max_gpu_length)))
+    
+    if gpu_num > case_gpu_num:
+        compatibility_issues.append(
+            f"GPU length ({gpu_length}) exceeds case maximum ({case_max_gpu_length})"
+        )
+
+    # 7. PSU wattage and components
+    psu_wattage = components['psu']['compatibility'].get('wattage', '0W')
+    min_required = components['gpu']['compatibility'].get('min_psu_wattage', '0W')
+    
+    # Simple numeric comparison
+    psu_num = float(''.join(filter(str.isdigit, psu_wattage)))
+    min_num = float(''.join(filter(str.isdigit, min_required)))
+    
+    if psu_num < min_num:
+        compatibility_issues.append(
+            f"PSU wattage ({psu_wattage}) may be insufficient for GPU (recommends {min_required})"
+        )
+
+    # 8. PSU and Case compatibility
+    psu_type = components['psu']['compatibility'].get('type')
+    case_psu_support = components['case']['compatibility'].get('psu_support', [])
+    if psu_type not in case_psu_support:
+        compatibility_issues.append(
+            f"PSU type ({psu_type}) not supported by case (supports: {', '.join(case_psu_support)})"
+        )
+
+    # If any compatibility issues found, return them
+    if compatibility_issues:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "Component compatibility issues found",
+                "issues": compatibility_issues
+            }
+        )
 
     # Prepare the build data with Firestore references
     build_dict = {
@@ -377,8 +468,9 @@ async def create_build(
         "createdAt": datetime.now(),
         "components": {
             component_type: db.collection(component_type).document(component_id)
-            for component_type, component_id in component_refs.items()
-        }
+            for component_type, component_id in build_data.components.dict().items()
+        },
+        "compatibility_validated": True  # Mark that this build was checked
     }
     
     try:

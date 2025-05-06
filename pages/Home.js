@@ -17,6 +17,7 @@ import RefreshButton from "../components/RefreshButton";
 import { Ionicons } from "@expo/vector-icons";
 import "../global.css";
 import { NICO_URL } from "../ipconfig";
+import { HARMAN_URL } from "../ipconfig";
 import { getToken } from "../utils/auth";
 
 const COMPONENT_SLOTS = [
@@ -72,7 +73,7 @@ export default function Home() {
     if (!tokenRef.current) return;
     setRefreshing(true);
     try {
-      const res = await fetch(`${NICO_URL}/get-builds`, {
+      const res = await fetch(`${HARMAN_URL}/get-builds`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -92,7 +93,7 @@ export default function Home() {
         setLoadingComponents(true);
         try {
           const res = await fetch(
-            `${NICO_URL}/get-components/${selectedSlot}`,
+            `${HARMAN_URL}/get-components/${selectedSlot}`,
             { headers: { Authorization: `Bearer ${userToken}` } }
           );
           if (!res.ok) throw new Error();
@@ -137,7 +138,7 @@ export default function Home() {
       );
       return;
     }
-
+  
     setLoading(true);
     const isEdit = editingIndex != null;
     const payload = {
@@ -148,21 +149,38 @@ export default function Home() {
       ),
     };
     const url = isEdit
-      ? `${NICO_URL}/update-build/${pcBuilds[editingIndex]?.id}`
-      : `${NICO_URL}/create-build`;
+      ? `${HARMAN_URL}/update-build/${pcBuilds[editingIndex]?.id}`
+      : `${HARMAN_URL}/create-build`;
     const method = isEdit ? "PUT" : "POST";
-
+  
     try {
-      const res = await fetch(url,
-        { method,
-          headers: {
-            Authorization: `Bearer ${tokenRef.current}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload)
+      const res = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${tokenRef.current}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload)
+      });
+  
+      if (!res.ok) {
+        const errorData = await res.json();
+        // Handle compatibility errors specifically
+        if (res.status === 400 && errorData.detail && errorData.detail.issues) {
+          setCompatibilityErrors(errorData.detail.issues);
+          setShowCompatibilityModal(true);
+          // Show detailed compatibility issues
+          Alert.alert(
+            "Compatibility Issues",
+            errorData.detail.issues.join("\n\n"),
+            [{ text: "OK" }],
+            { cancelable: true }
+          );
+          return;
         }
-      );
-      if (!res.ok) throw new Error();
+        throw new Error(errorData.message || "Save failed");
+      }
+  
       await fetchBuilds();
       // reset form
       setModalVisible(false);
@@ -175,19 +193,30 @@ export default function Home() {
       setSelectedComponents(
         COMPONENT_SLOTS.reduce((acc, s) => ({ ...acc, [s.key]: null }), {})
       );
-    } catch {
-      Alert.alert("Error", "Save failed");
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error.message || "Failed to save build"
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // delete build
-  const handleDeleteBuild = async () => {
+
+  
+  const [compatibilityErrors, setCompatibilityErrors] = useState([]);
+  const [showCompatibilityModal, setShowCompatibilityModal] = useState(false);
+
+
+
+
+   // delete build
+   const handleDeleteBuild = async () => {
     setLoading(true);
     try {
       const id = pcBuilds[selectedBuildIndex]?.id;
-      const res = await fetch(`${NICO_URL}/delete-build/${id}`, {
+      const res = await fetch(`${HARMAN_URL}/delete-build/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
@@ -201,12 +230,14 @@ export default function Home() {
     }
   };
 
+
+  
   // view build details
   const handleViewBuild = async () => {
     setActionModalVisible(false);
     const id = pcBuilds[selectedBuildIndex]?.id;
     try {
-      const res = await fetch(`${NICO_URL}/get-certain-build/${id}`, {
+      const res = await fetch(`${HARMAN_URL}/get-certain-build/${id}`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -223,7 +254,7 @@ export default function Home() {
     setActionModalVisible(false);
     const id = pcBuilds[selectedBuildIndex]?.id;
     try {
-      const res = await fetch(`${NICO_URL}/get-certain-build/${id}`, {
+      const res = await fetch(`${HARMAN_URL}/get-certain-build/${id}`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -478,6 +509,43 @@ export default function Home() {
           </View>
         </View>
       </Modal>
+
+      {/* IDK WHAT IM DOING Modal */}          
+      <Modal 
+        visible={showCompatibilityModal} 
+        transparent 
+        animationType="fade" 
+        onRequestClose={() => setShowCompatibilityModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center items-center">
+          <View className="bg-[#222] p-5 rounded-xl w-4/5 max-h-[80%]">
+            <Text className="text-white text-lg font-bold mb-3">
+              Compatibility Issues
+            </Text>
+            
+            <View className="max-h-[60%] mb-4">
+              <FlatList
+                data={compatibilityErrors}
+                renderItem={({ item }) => (
+                  <View className="flex-row items-start mb-2">
+                    <Ionicons name="warning" size={16} color="#FFA500" style={{ marginTop: 2 }} />
+                    <Text className="text-white ml-2 flex-1">{item}</Text>
+                  </View>
+                )}
+                keyExtractor={(item, index) => index.toString()}
+              />
+            </View>
+
+            <Pressable 
+              onPress={() => setShowCompatibilityModal(false)} 
+              className="bg-[#9fcfff] rounded p-3"
+            >
+              <Text className="text-center font-bold text-black">I Understand</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>       
+
 
       {/* Action Modal */}
       <Modal 
