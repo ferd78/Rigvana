@@ -10,72 +10,53 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  RefreshControl,
 } from "react-native";
 import MainLayout from "../components/MainLayout";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
-
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { Audio } from "expo-av";
+import { HARMAN_URL } from "../ipconfig";
+import { getToken } from '../utils/auth';
+import * as FileSystem from 'expo-file-system';
 
-const INITIAL_FOR_YOU = [
-  {
-    id: "1",
-    username: "ISsmFailure",
-    text: "Got a new build... Check it out!!!",
-    imageUri: "https://i.imgur.com/qkdpN.jpg",
-    likes: 2309,
-    commentsData: [
-      { username: "santoagd", text: "Looks amazing!" },
-      { username: "builder01", text: "Nice cable management." },
-    ],
-    shares: 4,
-    sends: 6,
-  },
-  {
-    id: "2",
-    username: "TechGuru",
-    text: "Just upgraded my RAM to 64GB — never going back! 💪",
-    likes: 842,
-    commentsData: [{ username: "ramfan", text: "How did you install them?" }],
-    shares: 3,
-    sends: 1,
-  },
-];
-
-const FOLLOWING_POSTS = [];
-
-export default function ForumPage() {
+const ForumPage = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const repost = route.params?.repost;
 
   // Tab state
   const [selectedTab, setSelectedTab] = useState("ForYou");
-
   // Posts state
-  const [posts, setPosts] = useState(
-    INITIAL_FOR_YOU.map((p) => ({ ...p, liked: false }))
-  );
-
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
   // New-post inputs
   const [newText, setNewText] = useState("");
   const [newImage, setNewImage] = useState(null);
   const [newLocation, setNewLocation] = useState(null);
   const [recording, setRecording] = useState(null);
   const [newAudio, setNewAudio] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   // if we got a repost payload, prefill the composer
   useEffect(() => {
     if (repost) {
       setSelectedTab("ForYou");
       setNewText(`Repost from @${repost.username}: ${repost.text}`);
-      setNewImage(repost.imageUri || null);
+      setNewImage(repost.image_url || null);
       setNewLocation(repost.location || null);
-      setNewAudio(repost.audioUri || null);
+      setNewAudio(repost.audio_url || null);
     }
   }, [repost]);
+
+  // Fetch posts on mount and when tab changes
+  useEffect(() => {
+    fetchPosts();
+  }, [selectedTab]);
 
   // ask permissions on mount
   useEffect(() => {
@@ -85,6 +66,49 @@ export default function ForumPage() {
       await Audio.requestPermissionsAsync();
     })();
   }, []);
+
+  const fetchPosts = async () => {
+    try {
+        setLoading(true);
+        const token = await getToken();
+        const response = await fetch(`${HARMAN_URL}/forum/posts`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch posts');
+        }
+
+        const data = await response.json();
+        
+        // Parse ISO date strings back to Date objects if needed
+        const processedPosts = data.map(post => ({
+            ...post,
+            created_at: new Date(post.created_at),
+            commentsData: post.comments?.map(comment => ({
+                ...comment,
+                created_at: new Date(comment.created_at)
+            })) || [],
+            // Ensure profile_picture_url exists, fallback to null
+            profile_picture_url: post.profile_picture_url || null
+        }));
+
+        setPosts(processedPosts);
+    } catch (error) {
+        console.error('Error fetching posts:', error.message);
+        Alert.alert("Error", "Could not fetch posts");
+    } finally {
+        setLoading(false);
+        setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchPosts();
+  };
 
   // pick an image
   const pickImage = async () => {
@@ -129,44 +153,214 @@ export default function ForumPage() {
     }
   };
 
+  const uploadFile = async (uri, fileType) => {
+    try {
+      const token = await getToken();
+      const filename = uri.split('/').pop();
+      const formData = new FormData();
+      
+      // For React Native, we need to modify the file object
+      formData.append('file', {
+        uri,
+        name: filename,
+        type: fileType === 'image' ? 'image/jpeg' : 'audio/m4a',
+      });
+
+      const response = await fetch(`${HARMAN_URL}/upload-profile-picture`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('File upload failed');
+      }
+
+      const data = await response.json();
+      return data.url;
+    } catch (error) {
+      console.error('Upload error:', error);
+      throw error;
+    }
+  };
+
   // submit new post
-  const handlePost = () => {
-    if (!newText.trim() && !newImage && !newAudio && !newLocation) {
-      Alert.alert("Empty Post", "Add text or an attachment.");
+  const handlePost = async () => {
+    // Validate at least text exists
+    if (!newText.trim()) {
+      Alert.alert("Error", "Post text is required");
       return;
     }
-    const newPost = {
-      id: Math.random().toString(),
-      username: "currentUser",
-      text: newText,
-      imageUri: newImage,
-      audioUri: newAudio,
-      location: newLocation,
-      likes: 0,
-      liked: false,
-      commentsData: [],
-      shares: 0,
-      sends: 0,
-    };
-    setPosts((prev) => [newPost, ...prev]);
-    // reset inputs
-    setNewText("");
-    setNewImage(null);
-    setNewAudio(null);
-    setNewLocation(null);
+
+    try {
+      setUploading(true);
+      let imageUrl = null;
+      let audioUrl = null;
+
+      // Upload files if they exist
+      if (newImage) {
+        imageUrl = await uploadFile(newImage, 'image');
+      }
+      if (newAudio) {
+        audioUrl = await uploadFile(newAudio, 'audio');
+      }
+
+      const token = await getToken();
+      const postData = {
+        text: newText,
+      };
+
+      // Only include optional fields if they exist
+      if (imageUrl) postData.image_url = imageUrl;
+      if (audioUrl) postData.audio_url = audioUrl;
+      if (newLocation) postData.location = newLocation;
+      // build_id would be added here if you implement that feature
+
+      const response = await fetch(`${HARMAN_URL}/forum/posts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(postData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create post');
+      }
+
+      const newPost = await response.json();
+      
+      // Add to local state
+      setPosts(prev => [{
+        ...newPost,
+        liked: false,
+        commentsData: [],
+        profile_picture_url: newPost.profile_picture_url || null,
+        created_at: new Date()
+      }, ...prev]);
+
+      // Reset form
+      setNewText("");
+      setNewImage(null);
+      setNewAudio(null);
+      setNewLocation(null);
+      
+      Alert.alert("Success", "Post created successfully");
+    } catch (error) {
+      console.error('Post error:', error);
+      Alert.alert("Error", "Failed to create post");
+    } finally {
+      setUploading(false);
+    }
   };
 
   // toggle like on a forum post
-  const toggleForumLike = (id) =>
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? { ...p, liked: !p.liked, likes: p.likes + (p.liked ? -1 : 1) }
-          : p
-      )
-    );
+  const toggleForumLike = async (postId) => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/like`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
 
-  const postsToShow = selectedTab === "ForYou" ? posts : FOLLOWING_POSTS;
+      if (!response.ok) {
+        throw new Error('Failed to toggle like');
+      }
+
+      const data = await response.json();
+      
+      // Update local state
+      setPosts(prev => prev.map(post => 
+        post.id === postId 
+          ? { 
+              ...post, 
+              liked: !post.liked,
+              likes: data.likes,
+              liked_by: data.liked 
+                ? [...(post.liked_by || []), post.user_id] 
+                : (post.liked_by || []).filter(id => id !== post.user_id)
+            } 
+          : post
+      ));
+    } catch (error) {
+      console.error('Like error:', error);
+      Alert.alert("Error", "Failed to toggle like");
+    }
+  };
+
+  const addComment = async (postId, text) => {
+    try {
+      // Validate input is a string
+      if (typeof text !== 'string' || !text.trim()) {
+        throw new Error('Comment text is required');
+      }
+  
+      const token = await getToken();
+      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: text.trim() }), // Send only the text
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to add comment');
+      }
+  
+      return await response.json();
+    } catch (error) {
+      console.error('Comment error:', error.message);
+      throw error;
+    }
+  };
+
+  const sharePost = async (postId) => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/share`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to share post');
+      }
+
+      // Update local state
+      setPosts(prev => prev.map(post => 
+        post.id === postId 
+          ? { 
+              ...post, 
+              shares: post.shares + 1 
+            } 
+          : post
+      ));
+    } catch (error) {
+      console.error('Share error:', error);
+      Alert.alert("Error", "Failed to share post");
+    }
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <MainLayout>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#9fcfff" />
+        </View>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -190,7 +384,17 @@ export default function ForumPage() {
         ))}
       </View>
 
-      <ScrollView style={styles.container}>
+      <ScrollView 
+        style={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#9fcfff"]}
+            tintColor="#9fcfff"
+          />
+        }
+      >
         {/* New Post UI */}
         {selectedTab === "ForYou" && (
           <View style={styles.newPostBox}>
@@ -241,45 +445,65 @@ export default function ForumPage() {
               </Text>
             )}
 
-            <Pressable onPress={handlePost} style={styles.postBtn}>
-              <Text style={styles.postBtnText}>Post</Text>
+            <Pressable 
+              onPress={handlePost} 
+              style={styles.postBtn}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <Text style={styles.postBtnText}>Post</Text>
+              )}
             </Pressable>
           </View>
         )}
 
         {/* Empty Following */}
-        {selectedTab === "Following" && postsToShow.length === 0 && (
+        {selectedTab === "Following" && posts.length === 0 && (
           <View style={styles.emptyFollowing}>
             <Text style={styles.emptyText}>
-              You haven’t followed any accounts
+              You haven't followed any accounts
             </Text>
           </View>
         )}
 
         {/* Feed */}
-        {postsToShow.map((p) => (
+        {posts.map((p) => (
           <View key={p.id} style={styles.postCard}>
             <View style={styles.postHeader}>
               <View style={styles.row}>
-                <Ionicons
-                  name="person-circle-outline"
-                  size={36}
-                  color="white"
-                />
+                <Pressable onPress={() => navigation.navigate('Profile', { userId: p.user_id })}>
+                  {p.profile_picture_url ? (
+                    <Image 
+                      source={{ uri: p.profile_picture_url }}
+                      style={styles.profileImage}
+                      onError={() => console.log("Failed to load profile image")}
+                    />
+                  ) : (
+                    <View style={styles.profileImagePlaceholder}>
+                      <Ionicons
+                        name="person-circle-outline"
+                        size={36}
+                        color="white"
+                      />
+                    </View>
+                  )}
+                </Pressable>
                 <Text style={styles.username}>@{p.username}</Text>
               </View>
               <Pressable
                 onPress={() =>
                   navigation.navigate("Discussion", {
                     post: p,
-                    onComment: (c) => {
-                      setPosts((prev) =>
-                        prev.map((x) =>
-                          x.id === p.id
-                            ? { ...x, commentsData: [...x.commentsData, c] }
-                            : x
-                        )
-                      );
+                    onComment: async (text) => {
+                      try {
+                        const newComment = await addComment(p.id, text);
+                        return newComment;
+                      } catch (error) {
+                        Alert.alert("Error", "Failed to add comment");
+                        return null;
+                      }
                     },
                   })
                 }
@@ -291,12 +515,12 @@ export default function ForumPage() {
             <Text style={styles.postText}>{p.text}</Text>
 
             {/* Image */}
-            {p.imageUri && (
-              <Image source={{ uri: p.imageUri }} style={styles.postImage} />
+            {p.image_url && (
+              <Image source={{ uri: p.image_url }} style={styles.postImage} />
             )}
 
             {/* Audio Player */}
-            {p.audioUri && <AudioPlayer uri={p.audioUri} />}
+            {p.audio_url && <AudioPlayer uri={p.audio_url} />}
 
             {/* Location */}
             {p.location && (
@@ -304,6 +528,14 @@ export default function ForumPage() {
                 📍 {p.location.latitude.toFixed(4)},{" "}
                 {p.location.longitude.toFixed(4)}
               </Text>
+            )}
+
+            {/* Build reference */}
+            {p.build_data && (
+              <View style={styles.buildPreview}>
+                <Text style={styles.buildTitle}>{p.build_data.name}</Text>
+                <Text style={styles.buildDesc}>{p.build_data.description}</Text>
+              </View>
             )}
 
             <View style={styles.reactionsRow}>
@@ -315,38 +547,45 @@ export default function ForumPage() {
                 />
                 <Text style={styles.stat}>{p.likes}</Text>
               </Pressable>
+              
               <View style={styles.row}>
                 <Ionicons name="chatbubble-outline" size={20} color="#888" />
                 <Text style={styles.stat}>{p.commentsData.length}</Text>
               </View>
+              
+              <Pressable onPress={() => sharePost(p.id)} style={styles.row}>
+                <Ionicons name="share-social-outline" size={20} color="#888" />
+                <Text style={styles.stat}>{p.shares}</Text>
+              </Pressable>
             </View>
           </View>
         ))}
       </ScrollView>
     </MainLayout>
   );
-}
+};
 
-// audio player subcomponent
-function AudioPlayer({ uri }) {
+// Audio player subcomponent
+const AudioPlayer = ({ uri }) => {
   const [sound, setSound] = useState(null);
   const [playing, setPlaying] = useState(false);
 
-  useEffect(
-    () => () => {
-      if (sound) sound.unloadAsync();
-    },
-    [sound]
-  );
+  useEffect(() => {
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [sound]);
 
   const onToggle = async () => {
     if (!sound) {
-      const { sound: s } = await Audio.Sound.createAsync({ uri });
-      s.setOnPlaybackStatusUpdate((status) => {
+      const { sound: newSound } = await Audio.Sound.createAsync({ uri });
+      newSound.setOnPlaybackStatusUpdate((status) => {
         if (status.didJustFinish) setPlaying(false);
       });
-      setSound(s);
-      await s.playAsync();
+      setSound(newSound);
+      await newSound.playAsync();
       setPlaying(true);
     } else if (playing) {
       await sound.pauseAsync();
@@ -369,7 +608,7 @@ function AudioPlayer({ uri }) {
       </Text>
     </Pressable>
   );
-}
+};
 
 const styles = StyleSheet.create({
   tabs: {
@@ -377,6 +616,21 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#555",
+  },
+  profileImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 8,
+  },
+  profileImagePlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   tab: { flex: 1, alignItems: "center", paddingVertical: 8 },
   tabActive: { borderBottomWidth: 2, borderBottomColor: "#fff" },
@@ -417,7 +671,12 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: "#888", fontFamily: "Helvetica" },
 
-  postCard: { marginBottom: 24 },
+  postCard: { 
+    marginBottom: 24,
+    backgroundColor: '#222',
+    borderRadius: 12,
+    padding: 16,
+  },
   postHeader: { flexDirection: "row", justifyContent: "space-between" },
   row: { flexDirection: "row", alignItems: "center" },
   username: { color: "#fff", marginLeft: 8, fontFamily: "Helvetica-Bold" },
@@ -431,4 +690,28 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   stat: { color: "#888", marginLeft: 4, fontFamily: "Helvetica" },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buildPreview: {
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  buildTitle: {
+    color: '#fff',
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 16,
+  },
+  buildDesc: {
+    color: '#ccc',
+    fontFamily: 'Helvetica',
+    fontSize: 14,
+    marginTop: 4,
+  },
 });
+
+export default ForumPage;

@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse # type: ignore
 from fastapi.exceptions import HTTPException # type: ignore
 from fastapi.requests import Request # type: ignore
 import random, time
-from typing import Dict
+from typing import Dict, List, Optional
 import smtplib
 from email.message import EmailMessage
 import os
@@ -21,6 +21,11 @@ from datetime import datetime
 from fastapi import Path
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
+import json
+from fastapi.encoders import jsonable_encoder
+import logging
+
+
 # For firebase configs
 
 app = FastAPI(
@@ -76,6 +81,11 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods 
     allow_headers=["*"],  # Allows all headers 
 )
+
+
+
+# Set up logging
+logger = logging.getLogger(__name__)
 ######################################################### SCHEMAS ############################################
 
 class SignupSchema(BaseModel):
@@ -123,6 +133,32 @@ class UserProfile(BaseModel):
 class ProfilePictureUpdate(BaseModel):
     profile_picture_url: str
 
+
+class ForumPostCreate(BaseModel):
+    text: str
+    image_url: Optional[str] = None
+    audio_url: Optional[str] = None
+    location: Optional[Dict[str, float]] = None
+    build_id: Optional[str] = None  
+
+class ForumPostResponse(BaseModel):
+    id: str
+    username: str
+    text: str
+    image_url: Optional[str]
+    audio_url: Optional[str]
+    location: Optional[Dict[str, float]]
+    likes: int
+    comments: List[Dict]
+    shares: int
+    created_at: datetime
+    build_id: Optional[str]
+    build_data: Optional[Dict]
+    profile_picture_url: Optional[str] = None 
+
+class CommentCreate(BaseModel):
+    text: str
+
 #################################################################################################################
 
 def send_email(to_email: str, content: str):
@@ -140,6 +176,18 @@ def send_email(to_email: str, content: str):
         print("Email sending failed:", e)
         traceback.print_exc()  # Show full error details
         raise HTTPException(status_code=500, detail="Failed to send email")
+    
+
+
+# Helper function to convert Firestore timestamps
+def convert_firestore_timestamp(obj):
+    if hasattr(obj, 'isoformat'):  # Handles both datetime and DatetimeWithNanoseconds
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: convert_firestore_timestamp(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_firestore_timestamp(v) for v in obj]
+    return obj
 
 ######################################################### ENPOINTS ############################################
 
@@ -794,9 +842,16 @@ async def set_profile(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     try:
+        # Convert the incoming data to a dictionary
+        profile_dict = profile_data.dict()
+        
+        # Handle the name/username field
+        if 'name' in profile_dict:
+            profile_dict['username'] = profile_dict.pop('name')
+        
         user_ref = db.collection("users").document(user_uid)
         user_ref.set({
-            "profile": profile_data.dict()
+            "profile": profile_dict
         }, merge=True)
 
         return {"message": "Profile updated successfully"}
@@ -843,7 +898,16 @@ async def upload_profile_picture(
         blob.make_public()
 
         print(f"[DEBUG] Upload successful. Public URL: {blob.public_url}")
-        return {"url": blob.public_url}
+
+        # Update Firestore with the new profile picture URL
+        user_ref = db.collection("users").document(user_uid)
+        user_ref.set({
+            "profile": {
+                "profile_picture": blob.public_url
+            }
+        }, merge=True)
+
+        return {"url": blob.public_url, "message": "Profile picture updated successfully"}
 
     except Exception as e:
         print("[ERROR] Exception during file upload.")
@@ -867,8 +931,11 @@ async def update_profile_picture(
 
     try:
         user_ref = db.collection("users").document(user_uid)
+        # Changed from "profile.picture_url" to "profile.profile_picture"
         user_ref.set({
-            "profile.picture_url": picture_data.profile_picture_url
+            "profile": {
+                "profile_picture": picture_data.profile_picture_url
+            }
         }, merge=True)
 
         return {"message": "Profile picture updated successfully"}
@@ -881,25 +948,347 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
     try:
         decoded_token = auth.verify_id_token(credentials.credentials)
         user_uid = decoded_token['uid']
-        user_email = decoded_token.get('email', '')  # Safely get the email
+        user_email = decoded_token.get('email', '')
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     try:
+        profile = {
+            "uid": user_uid,
+            "email": user_email,
+        }
+
         user_doc = db.collection("users").document(user_uid).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="User not found")
+        
+        if user_doc.exists:
+            user_data = user_doc.to_dict()
+            user_profile = user_data.get("profile", {})
 
-        user_data = user_doc.to_dict()
-        profile = user_data.get("profile", {})
+            # Get actual values or assign 'not set' only if empty
+            username = user_profile.get("username", "").strip()
+            description = user_profile.get("description", "").strip()
+            profile_picture = user_profile.get("profile_picture", "").strip()
 
-        # Add the email to the response
-        profile["email"] = user_email
+            profile["username"] = username if username else "not set"
+            profile["description"] = description if description else "not set"
+            profile["profile_picture"] = profile_picture if profile_picture else "not set"
+        else:
+            profile["username"] = "not set"
+            profile["description"] = "not set"
+            profile["profile_picture"] = "not set"
 
         return profile
+        
     except Exception as e:
         print(f"Error fetching profile: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve profile")
+
+    
+
+
+
+
+
+
+
+    # Forum endpoints
+@app.post('/forum/posts',
+          summary="Create a new forum post",
+          description="Create a new post in the forum",
+          response_description="The created post")
+async def create_forum_post(
+    post_data: ForumPostCreate,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        user_email = decoded_token.get('email', '')
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        # Validate that text exists
+        if not post_data.text.strip():
+            raise HTTPException(status_code=400, detail="Text is required for a post")
+
+        # Get username from profile or use email prefix
+        user_doc = db.collection("users").document(user_uid).get()
+        username = "user"
+        if user_doc.exists:
+            profile = user_doc.to_dict().get("profile", {})
+            username = profile.get("name", user_email.split("@")[0])
+
+        post_ref = db.collection("forum_posts").document()
+        post_dict = {
+            "user_id": user_uid,
+            "username": username,
+            "text": post_data.text,
+            "image_url": post_data.image_url,
+            "audio_url": post_data.audio_url,
+            "location": post_data.location,
+            "likes": 0,
+            "liked_by": [],
+            "comments": [],
+            "shares": 0,
+            "created_at": datetime.now(),
+        }
+        
+        # Only add build_id if it exists
+        if post_data.build_id:
+            post_dict["build_id"] = post_data.build_id
+
+        post_ref.set(post_dict)
+
+        # If there's a build reference, include build data in response
+        build_data = None
+        if post_data.build_id:
+            build_ref = db.collection("users").document(user_uid).collection("builds").document(post_data.build_id)
+            build_doc = build_ref.get()
+            if build_doc.exists:
+                build_data = build_doc.to_dict()
+
+        return {
+            **post_dict,
+            "id": post_ref.id,
+            "build_data": build_data
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating post: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create post"
+        )
+    
+
+
+
+@app.get('/forum/posts')
+async def get_forum_posts(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify token
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+
+        # Query posts
+        posts_ref = db.collection("forum_posts").order_by("created_at", direction=firestore.Query.DESCENDING)
+        posts = posts_ref.stream()
+
+        post_list = []
+        for post in posts:
+            post_data = post.to_dict()
+            post_data['id'] = post.id
+            
+            # Convert Firestore timestamps
+            post_data = convert_firestore_timestamp(post_data)
+            
+            # Check if current user liked this post
+            post_data['liked'] = user_uid in post_data.get('liked_by', [])
+            
+            # If there's a build reference, include build data
+            if post_data.get('build_id'):
+                build_user_id = post_data['user_id']
+                build_ref = db.collection("users").document(build_user_id).collection("builds").document(post_data['build_id'])
+                build_doc = build_ref.get()
+                if build_doc.exists:
+                    post_data['build_data'] = convert_firestore_timestamp(build_doc.to_dict())
+            
+            post_list.append(post_data)
+
+        return JSONResponse(content=post_list)
+
+    except Exception as e:
+        print(f"Error retrieving posts: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve posts"
+        )
+
+@app.post('/forum/posts/{post_id}/like',
+          summary="Like or unlike a post",
+          description="Toggle like status for a forum post",
+          response_description="Updated like count")
+async def toggle_post_like(
+    post_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        post_ref = db.collection("forum_posts").document(post_id)
+        post_doc = post_ref.get()
+
+        if not post_doc.exists:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        post_data = post_doc.to_dict()
+        liked_by = post_data.get("liked_by", [])
+        likes = post_data.get("likes", 0)
+
+        if user_uid in liked_by:
+            # Unlike
+            liked_by.remove(user_uid)
+            likes -= 1
+        else:
+            # Like
+            liked_by.append(user_uid)
+            likes += 1
+
+        post_ref.update({
+            "likes": likes,
+            "liked_by": liked_by
+        })
+
+        return {"likes": likes, "liked": user_uid in liked_by}
+
+    except Exception as e:
+        print(f"Error toggling like: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to toggle like"
+        )
+
+@app.post('/forum/posts/{post_id}/comments')
+async def add_comment(
+    post_id: str,
+    comment_data: CommentCreate,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request = None  # For logging purposes
+):
+    try:
+        # Log incoming request
+        if request:
+            try:
+                body = await request.json()
+                logger.info(f"Comment request received for post {post_id}: {body}")
+            except:
+                logger.warning("Could not parse request body for logging")
+
+        # Verify user token
+        try:
+            decoded_token = auth.verify_id_token(credentials.credentials)
+            user_uid = decoded_token['uid']
+            user_email = decoded_token.get('email', '')
+            logger.debug(f"Authenticated user: {user_uid}")
+        except Exception as auth_error:
+            logger.error(f"Authentication failed: {str(auth_error)}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired authentication token"
+            )
+
+        # Validate comment text
+        if not comment_data.text or not comment_data.text.strip():
+            logger.error("Empty comment text received")
+            raise HTTPException(
+                status_code=400,
+                detail="Comment text cannot be empty"
+            )
+
+        # Get post reference
+        post_ref = db.collection("forum_posts").document(post_id)
+        post_snapshot = post_ref.get()
+        
+        if not post_snapshot.exists:
+            logger.error(f"Post not found: {post_id}")
+            raise HTTPException(
+                status_code=404,
+                detail="Post not found"
+            )
+
+        # Get username
+        username = user_email.split("@")[0]  # Default to email prefix
+        try:
+            user_doc = db.collection("users").document(user_uid).get()
+            if user_doc.exists:
+                profile = user_doc.to_dict().get("profile", {})
+                username = profile.get("name", username)
+            logger.debug(f"Resolved username: {username}")
+        except Exception as user_error:
+            logger.warning(f"Could not fetch user profile: {str(user_error)}")
+            # Continue with default username
+
+        # Create comment object
+        comment = {
+            "user_id": user_uid,
+            "username": username,
+            "text": comment_data.text.strip(),
+            "created_at": datetime.now(),
+            "comment_id": str(uuid.uuid4())  # Add unique ID for each comment
+        }
+
+        # Add to Firestore
+        try:
+            post_ref.update({
+                "comments": firestore.ArrayUnion([comment])
+            })
+            logger.info(f"Comment added to post {post_id} by user {user_uid}")
+        except Exception as firestore_error:
+            logger.error(f"Firestore update failed: {str(firestore_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update post with new comment"
+            )
+
+        # Convert datetime to ISO format for JSON serialization
+        comment_serialized = {
+            **comment,
+            "created_at": comment["created_at"].isoformat()
+        }
+
+        return comment_serialized
+
+    except HTTPException:
+        # Re-raise HTTP exceptions we created
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in add_comment: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while adding comment"
+        )
+
+@app.post('/forum/posts/{post_id}/share',
+          summary="Share a post",
+          description="Increment the share count of a post",
+          response_description="Updated share count")
+async def share_post(
+    post_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        post_ref = db.collection("forum_posts").document(post_id)
+        post_doc = post_ref.get()
+
+        if not post_doc.exists:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        post_ref.update({
+            "shares": firestore.Increment(1)
+        })
+
+        return {"message": "Post shared successfully"}
+
+    except Exception as e:
+        print(f"Error sharing post: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to share post"
+        )
 
 #################################################################################################################
 

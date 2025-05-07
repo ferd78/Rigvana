@@ -29,6 +29,7 @@ function EditProfile() {
                 }
                 
                 const data = await response.json();
+                console.log("Profile data:", data); // For debugging
                 setProfile(data);
             } catch (err) {
                 setError(err.message);
@@ -58,37 +59,56 @@ function EditProfile() {
 
     return (
         <>
-            <View className="flex-row justify-around gap-44 mt-4">
+            <View className="flex-row justify-around gap-36 mt-4">
                 <View>
-                    <Text className="text-white text-xl text-helvetica font-bold">
-                        {profile?.name || 'No name set'}
-                    </Text>
-                    <Text className="text-white text-md">
-                        {profile?.email || 'No email set'}
-                    </Text>
+                    {profile?.username && profile.username !== "not set" ? (
+                        <Text className="text-white text-xl text-helvetica font-bold">
+                            {profile.username}
+                        </Text>
+                    ) : (
+                        <Text className="text-white text-xl text-helvetica font-bold">
+                            No username set
+                        </Text>
+                    )}
+                    
+                    {profile?.email ? (
+                        <Text className="text-white text-md">{profile.email}</Text>
+                    ) : null}
 
-                    <Text className="mt-8 text-white text-helvetica">
-                        {profile?.description || 'No bio set'}
-                    </Text>
+                    {profile?.description && profile.description !== "not set" ? (
+                        <Text className="mt-8 text-white text-helvetica">{profile.description}</Text>
+                    ) : (
+                        <Text className="mt-8 text-white text-helvetica">No description set</Text>
+                    )}
                 </View>
 
                 <Pressable 
                     onPress={() => setShowModal2(true)}
                     className="h-16 w-16 rounded-full items-center justify-center overflow-hidden"
                 >
-                    {profile?.profile_picture_url && !imageError ? (
+                    {profile?.profile_picture && profile.profile_picture !== "not set" ? (
                         <Image
-                            source={{ uri: profile.profile_picture_url }}
+                            source={{ 
+                                uri: profile.profile_picture,
+                                cache: 'reload' // Force image reload
+                            }}
                             className="h-full w-full"
                             resizeMode="cover"
-                            onError={() => setImageError(true)}
+                            onError={() => {
+                                console.log("Image failed to load:", profile.profile_picture);
+                                setImageError(true);
+                            }}
+                            onLoad={() => {
+                                console.log("Image loaded successfully");
+                                setImageError(false);
+                            }}
                         />
                     ) : (
                         <View className="h-full w-full bg-gray-500 items-center justify-center">
                             <Ionicons name="person" size={28} color="white" />
                         </View>
                     )}
-                </Pressable>         
+                </Pressable>    
             </View>
 
             <View className="items-center mt-24">
@@ -113,6 +133,9 @@ function EditProfile() {
                 onClose={() => setShowModal2(false)}
                 setProfile={setProfile}
             />
+
+
+
         </>
     );
 }
