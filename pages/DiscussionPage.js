@@ -16,7 +16,7 @@ import MainLayout from "../components/MainLayout";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { v4 as uuidv4 } from 'uuid';
-import { HARMAN_URL } from "../ipconfig";
+import { GLOBAL_URL } from "../ipconfig";
 import { getToken } from '../utils/auth';
 import 'react-native-get-random-values';
 
@@ -61,7 +61,7 @@ export default function DiscussionPage({ route }) {
   const addComment = async (postId, text) => {
     try {
       const token = await getToken();
-      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/comments`, {
+      const response = await fetch(`${GLOBAL_URL}/forum/posts/${postId}/comments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -168,7 +168,7 @@ export default function DiscussionPage({ route }) {
       setPostLikes(prev => prev + (newLikedState ? 1 : -1));
 
       const token = await getToken();
-      const response = await fetch(`${HARMAN_URL}/forum/posts/${initialPost.id}/like`, {
+      const response = await fetch(`${GLOBAL_URL}/forum/posts/${initialPost.id}/like`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

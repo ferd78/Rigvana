@@ -12,6 +12,7 @@ import SetNewPassword from "./pages/SetNewPassword";
 import * as SplashScreen from 'expo-splash-screen';
 import BottomTabs from "./navigation/BottomTabs";
 import Settings from "./pages/Settings";
+import ViewPage from "./pages/ViewPage";
 
 const Stack = createNativeStackNavigator();
 
@@ -42,6 +43,7 @@ function App() {
           <Stack.Screen name="Verification" component={Verification} options={{ headerShown: false}}/>
           <Stack.Screen name="MainTabs" component={BottomTabs} options={{ headerShown: false }} />
           <Stack.Screen name="Settings" component={Settings} options={{ headerShown: false }} />
+          <Stack.Screen name="ViewPage" component={ViewPage} options={{ headerShown: false }} />
         </Stack.Navigator>
       </NavigationContainer>
   );

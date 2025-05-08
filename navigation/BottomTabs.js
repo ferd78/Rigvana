@@ -38,8 +38,8 @@ function BottomTabs(){
         })}
         >
       <Tab.Screen name="Home" component={Home} />
-      <Tab.Screen name="Map" component={MapPage} />
       <Tab.Screen name="Forum" component={ForumStack} />
+      <Tab.Screen name="Map" component={MapPage} />
       <Tab.Screen name="Profile" component={ProfilePage}/>
     </Tab.Navigator>
     );

@@ -16,9 +16,10 @@ import AddNewButton from "../components/AddNewButton";
 import RefreshButton from "../components/RefreshButton";
 import { Ionicons } from "@expo/vector-icons";
 import "../global.css";
-import { NICO_URL } from "../ipconfig";
-import { HARMAN_URL } from "../ipconfig";
+// import { NICO_URL } from "../ipconfig";
+import { HARMAN_URL, GLOBAL_URL} from "../ipconfig";
 import { getToken } from "../utils/auth";
+import { useNavigation } from "@react-navigation/native";
 
 const COMPONENT_SLOTS = [
   { key: "cpu",          label: "CPU",          placeholder: "Pick your CPU..." },
@@ -42,6 +43,8 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [userToken, setUserToken] = useState(null);
   const tokenRef = useRef(null);
+  const [compatibilityErrors, setCompatibilityErrors] = useState([]);
+  const [showCompatibilityModal, setShowCompatibilityModal] = useState(false);
 
   // edit/view state
   const [editingIndex, setEditingIndex] = useState(null);
@@ -57,7 +60,7 @@ export default function Home() {
   const [buildDesc, setBuildDesc] = useState("");
   const [actionModalVisible, setActionModalVisible] = useState(false);
   const [selectedBuildIndex, setSelectedBuildIndex] = useState(null);
-
+  const nav = useNavigation()
   // load token + builds
   useEffect(() => {
     (async () => {
@@ -73,7 +76,7 @@ export default function Home() {
     if (!tokenRef.current) return;
     setRefreshing(true);
     try {
-      const res = await fetch(`${HARMAN_URL}/get-builds`, {
+      const res = await fetch(`${GLOBAL_URL}/get-builds`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -93,7 +96,7 @@ export default function Home() {
         setLoadingComponents(true);
         try {
           const res = await fetch(
-            `${HARMAN_URL}/get-components/${selectedSlot}`,
+            `${GLOBAL_URL}/get-components/${selectedSlot}`,
             { headers: { Authorization: `Bearer ${userToken}` } }
           );
           if (!res.ok) throw new Error();
@@ -149,8 +152,8 @@ export default function Home() {
       ),
     };
     const url = isEdit
-      ? `${HARMAN_URL}/update-build/${pcBuilds[editingIndex]?.id}`
-      : `${HARMAN_URL}/create-build`;
+      ? `${GLOBAL_URL}/update-build/${pcBuilds[editingIndex]?.id}`
+      : `${GLOBAL_URL}/create-build`;
     const method = isEdit ? "PUT" : "POST";
   
     try {
@@ -205,8 +208,7 @@ export default function Home() {
 
 
   
-  const [compatibilityErrors, setCompatibilityErrors] = useState([]);
-  const [showCompatibilityModal, setShowCompatibilityModal] = useState(false);
+  
 
 
 
@@ -216,7 +218,7 @@ export default function Home() {
     setLoading(true);
     try {
       const id = pcBuilds[selectedBuildIndex]?.id;
-      const res = await fetch(`${HARMAN_URL}/delete-build/${id}`, {
+      const res = await fetch(`${GLOBAL_URL}/delete-build/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
@@ -230,22 +232,34 @@ export default function Home() {
     }
   };
 
-
-  
-  // view build details
   const handleViewBuild = async () => {
     setActionModalVisible(false);
-    const id = pcBuilds[selectedBuildIndex]?.id;
+    const build = pcBuilds[selectedBuildIndex];
+    if (!build?.id) {
+      Alert.alert("Error", "No build selected");
+      return;
+    }
+
     try {
-      const res = await fetch(`${HARMAN_URL}/get-certain-build/${id}`, {
-        headers: { Authorization: `Bearer ${tokenRef.current}` },
-      });
-      if (!res.ok) throw new Error();
+      setLoading(true);
+      const res = await fetch(
+        `${GLOBAL_URL}/get-certain-build/${build.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenRef.current}`,
+          },
+        }
+      );
+      if (!res.ok) throw new Error("Fetch failed");
       const data = await res.json();
-      setViewBuild(data);
-      setViewModalVisible(true);
-    } catch {
+
+      // instead of a modal, navigate to the full-screen ViewPage:
+      nav.navigate("ViewPage", { build: data });
+    } catch (err) {
+      console.error(err);
       Alert.alert("Error", "Load details failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -254,7 +268,7 @@ export default function Home() {
     setActionModalVisible(false);
     const id = pcBuilds[selectedBuildIndex]?.id;
     try {
-      const res = await fetch(`${HARMAN_URL}/get-certain-build/${id}`, {
+      const res = await fetch(`${GLOBAL_URL}/get-certain-build/${id}`, {
         headers: { Authorization: `Bearer ${tokenRef.current}` },
       });
       if (!res.ok) throw new Error();
@@ -478,39 +492,7 @@ export default function Home() {
         </View>
       </Modal>
 
-      {/* View Modal */}
-      <Modal 
-      visible={viewModalVisible} 
-      transparent 
-      animationType="fade" 
-      onRequestClose={()=>setViewModalVisible(false)}
-      >
-        <View className="flex-1 bg-black/50 justify-center items-center">
-          <View className="bg-zinc-800 p-4 rounded-lg w-4/5">
-            <Text className="text-white text-xl font-bold mb-2">
-              {viewBuild?.name}
-            </Text>
-
-            <Text className="text-gray-300 mb-4">
-              {viewBuild?.description}
-            </Text>
-
-            {viewBuild && Object.entries(viewBuild.components).map(([slot,comp])=>
-              (<Text key={slot} className="text-white">{slot.toUpperCase()}: {comp?.name ?? comp}
-              </Text>))}
-            
-            <Pressable onPress={()=>setViewModalVisible(false)} 
-            className="mt-4 self-center">
-              <Text className="text-ymblue font-bold">
-                Close
-              </Text>
-            </Pressable>
-            
-          </View>
-        </View>
-      </Modal>
-
-      {/* IDK WHAT IM DOING Modal */}          
+      {/* Compatibility Issue Modal */}          
       <Modal 
         visible={showCompatibilityModal} 
         transparent 
@@ -518,7 +500,7 @@ export default function Home() {
         onRequestClose={() => setShowCompatibilityModal(false)}
       >
         <View className="flex-1 bg-black/50 justify-center items-center">
-          <View className="bg-[#222] p-5 rounded-xl w-4/5 max-h-[80%]">
+          <View className="bg-semiblack p-5 rounded-xl w-4/5 max-h-[80%]">
             <Text className="text-white text-lg font-bold mb-3">
               Compatibility Issues
             </Text>
@@ -538,7 +520,7 @@ export default function Home() {
 
             <Pressable 
               onPress={() => setShowCompatibilityModal(false)} 
-              className="bg-[#9fcfff] rounded p-3"
+              className="bg-ymblue rounded-xl p-3"
             >
               <Text className="text-center font-bold text-black">I Understand</Text>
             </Pressable>

@@ -2,7 +2,7 @@ import { Modal, View, Text, Pressable, ActivityIndicator, Platform } from "react
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from 'expo-image-picker';
 import { getToken } from '../utils/auth';
-import { HARMAN_URL } from "../ipconfig";
+import { HARMAN_URL, GLOBAL_URL } from "../ipconfig";
 import { useState } from "react";
 
 export default function PictureModal({ visible, onClose, setProfile }) {
@@ -10,7 +10,7 @@ export default function PictureModal({ visible, onClose, setProfile }) {
     const [error, setError] = useState(null);
     const testConnection = async () => {
         try {
-          const response = await fetch(`${HARMAN_URL}/`);
+          const response = await fetch(`${GLOBAL_URL}/`);
           console.log('Connection test:', await response.text());
         } catch (error) {
           console.error('Connection test failed:', error);
@@ -63,7 +63,7 @@ export default function PictureModal({ visible, onClose, setProfile }) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
     
-            const uploadResponse = await fetch(`${HARMAN_URL}/upload-profile-picture`, {
+            const uploadResponse = await fetch(`${GLOBAL_URL}/upload-profile-picture`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -91,7 +91,7 @@ export default function PictureModal({ visible, onClose, setProfile }) {
             const { url } = JSON.parse(responseText);
             
             // Update profile
-            const updateResponse = await fetch(`${HARMAN_URL}/update-profile-picture`, {
+            const updateResponse = await fetch(`${GLOBAL_URL}/update-profile-picture`, {
                 method: "POST",
                 headers: {
                     'Content-Type': 'application/json',
@@ -134,7 +134,9 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                     </Pressable>
 
                     <Text className="text-lg font-bold mb-4 text-white text-helvetica font-bold">
-                        Update Profile Picture
+                        Update 
+                        Profile 
+                        Picture:
                     </Text>
 
                     {error && (
@@ -154,12 +156,10 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                             )}
                         </Pressable>
 
-                        <Pressable 
-                            className="bg-gray-500 px-6 py-3 rounded-xl"
-                            onPress={onClose}
-                            disabled={loading}
-                        >
-                            <Text className="text-white font-bold">Cancel</Text>
+                        <Pressable className="bg-red-500 px-6 py-3 mt-3 rounded-xl" onPress={console.log("Delete Profile Pic")}>
+                            <Text className="text-white font-bold font-helvetica">
+                                Delete
+                            </Text>
                         </Pressable>
                     </View>
                 </View>

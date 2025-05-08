@@ -18,7 +18,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { Audio } from "expo-av";
-import { HARMAN_URL } from "../ipconfig";
+import { HARMAN_URL, GLOBAL_URL } from "../ipconfig";
 import { getToken } from '../utils/auth';
 import * as FileSystem from 'expo-file-system';
 
@@ -71,7 +71,7 @@ const ForumPage = () => {
     try {
         setLoading(true);
         const token = await getToken();
-        const response = await fetch(`${HARMAN_URL}/forum/posts`, {
+        const response = await fetch(`${GLOBAL_URL}/forum/posts`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
             },
@@ -166,7 +166,7 @@ const ForumPage = () => {
         type: fileType === 'image' ? 'image/jpeg' : 'audio/m4a',
       });
 
-      const response = await fetch(`${HARMAN_URL}/upload-profile-picture`, {
+      const response = await fetch(`${GLOBAL_URL}/upload-profile-picture`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -219,7 +219,7 @@ const ForumPage = () => {
       if (newLocation) postData.location = newLocation;
       // build_id would be added here if you implement that feature
 
-      const response = await fetch(`${HARMAN_URL}/forum/posts`, {
+      const response = await fetch(`${GLOBAL_URL}/forum/posts`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -262,7 +262,7 @@ const ForumPage = () => {
   const toggleForumLike = async (postId) => {
     try {
       const token = await getToken();
-      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/like`, {
+      const response = await fetch(`${GLOBAL_URL}/forum/posts/${postId}/like`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -302,7 +302,7 @@ const ForumPage = () => {
       }
   
       const token = await getToken();
-      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/comments`, {
+      const response = await fetch(`${GLOBAL_URL}/forum/posts/${postId}/comments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -326,7 +326,7 @@ const ForumPage = () => {
   const sharePost = async (postId) => {
     try {
       const token = await getToken();
-      const response = await fetch(`${HARMAN_URL}/forum/posts/${postId}/share`, {
+      const response = await fetch(`${GLOBAL_URL}/forum/posts/${postId}/share`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

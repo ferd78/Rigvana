@@ -5,6 +5,7 @@ import ProfileModal from "./ProfileModal";
 import PictureModal from "./PictureModal";
 import { getToken } from '../utils/auth';
 import { HARMAN_URL } from "../ipconfig";
+import { GLOBAL_URL } from "../ipconfig";
 
 function EditProfile() {
     const [showModal, setShowModal] = useState(false);
@@ -18,7 +19,7 @@ function EditProfile() {
         const fetchProfile = async () => {
             try {
                 const token = await getToken();
-                const response = await fetch(`${HARMAN_URL}/get-profile`, {
+                const response = await fetch(`${GLOBAL_URL}/get-profile`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }

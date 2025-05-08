@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import LoginButton from "../components/LoginButton";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useState, useRef } from "react";
-import { NICO_URL } from "../ipconfig";
+import { NICO_URL, GLOBAL_URL } from "../ipconfig";
 import { FELIX_URL } from "../ipconfig";
 
 function Verification() {
@@ -29,7 +29,7 @@ function Verification() {
         }
 
         try {
-            const response = await fetch(`${NICO_URL}/verify-otp`, {
+            const response = await fetch(`${GLOBAL_URL}/verify-otp`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp: enteredOtp }),

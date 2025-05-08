@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { getToken } from '../utils/auth';
 import { HARMAN_URL } from "../ipconfig";
+import { GLOBAL_URL } from "../ipconfig";
 
 export default function ProfileModal({ visible, onClose, profile, setProfile }) {
   const [name, setName] = useState(profile?.name || "");
@@ -16,7 +17,7 @@ export default function ProfileModal({ visible, onClose, profile, setProfile }) 
       setError(null);
       
       const token = await getToken();
-      const response = await fetch(`${HARMAN_URL}/set-profile`, {
+      const response = await fetch(`${GLOBAL_URL}/set-profile`, {
         method: "POST",
         headers: {
           'Content-Type': 'application/json',
