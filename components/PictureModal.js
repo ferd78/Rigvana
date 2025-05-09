@@ -8,6 +8,7 @@ import { useState } from "react";
 export default function PictureModal({ visible, onClose, setProfile }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    
     const testConnection = async () => {
         try {
           const response = await fetch(`${GLOBAL_URL}/`);
@@ -15,14 +16,15 @@ export default function PictureModal({ visible, onClose, setProfile }) {
         } catch (error) {
           console.error('Connection test failed:', error);
         }
-      };
-      testConnection();
-      const pickImage = async () => {
+    };
+    
+    testConnection();
+    
+    const pickImage = async () => {
         try {
             setLoading(true);
             setError(null);
             
-            // Request permissions
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
                 throw new Error('Permission to access media library was denied');
@@ -44,7 +46,6 @@ export default function PictureModal({ visible, onClose, setProfile }) {
             const type = 'image/jpeg';
             const name = 'profile.jpg';
     
-            // Create FormData - Android specific handling
             const formData = new FormData();
             formData.append('file', {
                 uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
@@ -59,9 +60,8 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                 platform: Platform.OS
             });
     
-            // Upload image
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            const timeout = setTimeout(() => controller.abort(), 15000);
     
             const uploadResponse = await fetch(`${GLOBAL_URL}/upload-profile-picture`, {
                 method: 'POST',
@@ -90,7 +90,6 @@ export default function PictureModal({ visible, onClose, setProfile }) {
     
             const { url } = JSON.parse(responseText);
             
-            // Update profile
             const updateResponse = await fetch(`${GLOBAL_URL}/update-profile-picture`, {
                 method: "POST",
                 headers: {
@@ -106,10 +105,9 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                 throw new Error('Failed to update profile');
             }
     
-            // Update local state
             setProfile(prev => ({
                 ...prev,
-                profile_picture_url: url
+                profile_picture: url
             }));
     
             onClose();
@@ -125,6 +123,37 @@ export default function PictureModal({ visible, onClose, setProfile }) {
         }
     };
 
+    const deleteProfilePicture = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            
+            const token = await getToken();
+            const response = await fetch(`${GLOBAL_URL}/delete-profile-picture`, {
+                method: "POST",
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete profile picture');
+            }
+
+            setProfile(prev => ({
+                ...prev,
+                profile_picture: "not set"
+            }));
+
+            onClose();
+        } catch (err) {
+            console.error('Error deleting profile picture:', err);
+            setError(err.message || 'Failed to delete profile picture');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <Modal visible={visible} animationType="slide" transparent>
             <View className="flex-1 justify-center items-center bg-black/60">
@@ -134,9 +163,7 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                     </Pressable>
 
                     <Text className="text-lg font-bold mb-4 text-white text-helvetica font-bold">
-                        Update 
-                        Profile 
-                        Picture:
+                        Update Profile Picture:
                     </Text>
 
                     {error && (
@@ -147,7 +174,7 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                         <Pressable 
                             className="bg-ymblue px-6 py-3 rounded-xl"
                             onPress={pickImage}
-                            disabled={loading}
+                            
                         >
                             {loading ? (
                                 <ActivityIndicator color="black" />
@@ -156,10 +183,18 @@ export default function PictureModal({ visible, onClose, setProfile }) {
                             )}
                         </Pressable>
 
-                        <Pressable className="bg-red-500 px-6 py-3 mt-3 rounded-xl" onPress={console.log("Delete Profile Pic")}>
-                            <Text className="text-white font-bold font-helvetica">
-                                Delete
-                            </Text>
+                        <Pressable 
+                            className="bg-red-500 px-6 py-3 mt-3 rounded-xl" 
+                            onPress={deleteProfilePicture}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="white" />
+                            ) : (
+                                <Text className="text-white font-bold font-helvetica">
+                                    Delete
+                                </Text>
+                            )}
                         </Pressable>
                     </View>
                 </View>

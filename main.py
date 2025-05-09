@@ -988,6 +988,30 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
 
 
 
+@app.post('/delete-profile-picture')
+async def delete_profile_picture(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        # Update Firestore to remove the profile picture
+        user_ref = db.collection("users").document(user_uid)
+        user_ref.set({
+            "profile": {
+                "profile_picture": "not set"
+            }
+        }, merge=True)
+
+        return {"message": "Profile picture deleted successfully"}
+
+    except Exception as e:
+        print(f"Error deleting profile picture: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete profile picture")
 
 
 
