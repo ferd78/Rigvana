@@ -12,6 +12,9 @@ export default function ViewPage({ route, navigation }) {
       navigation.goBack();
       return null;
     }
+
+    const TotalPrice = Object.values(build.components).reduce((sum, comp) => sum + (comp?.price || 0), 0);
+    var Price = TotalPrice.toLocaleString();
   
     return (
       <MainLayout>
@@ -48,7 +51,13 @@ export default function ViewPage({ route, navigation }) {
               </View>
             ) : null
           )}
-  
+
+          <View className="mb-2">
+            <Text className="text-white text-helvetica font-bold">
+              Total Price: Rp. {Price}
+            </Text>
+          </View>
+
           <Pressable
             onPress={() => navigation.goBack()}
             className="self-center mb-8 bg-ymblue px-8 py-2 rounded-xl"
