@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse # type: ignore
 from fastapi.exceptions import HTTPException # type: ignore
 from fastapi.requests import Request # type: ignore
 import random, time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import smtplib
 from email.message import EmailMessage
 import os
@@ -189,6 +189,26 @@ def convert_firestore_timestamp(obj):
         return [convert_firestore_timestamp(v) for v in obj]
     return obj
 
+
+
+def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate distance between two coordinates in kilometers using Haversine formula.
+    """
+    from math import radians, sin, cos, sqrt, atan2
+    
+    # Convert coordinates to radians
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    
+    # Haversine formula
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    radius_of_earth = 6371  # Earth's radius in km
+    distance = radius_of_earth * c
+    
+    return distance
 ######################################################### ENPOINTS ############################################
 
 @app.get("/")
@@ -1312,6 +1332,89 @@ async def share_post(
         raise HTTPException(
             status_code=500,
             detail="Failed to share post"
+        )
+    
+
+@app.get('/map/nearby-stores')
+async def get_nearby_pc_stores(
+    lat: float,
+    lng: float,
+    radius: int = 5000,  # Default 5km radius
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Find nearby PC component stores using Google Places API.
+    
+    Parameters:
+    - lat: Latitude of search location
+    - lng: Longitude of search location
+    - radius: Search radius in meters (default 5000 = 5km)
+    
+    Returns:
+    - List of nearby PC stores with name, address, distance, and coordinates
+    """
+    try:
+        # Verify the token
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        
+        # Google Places API endpoint
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        
+        # Parameters for PC/electronics stores search
+        params = {
+            'location': f'{lat},{lng}',
+            'radius': radius,
+            'type': 'electronics_store',  # Primary category for electronics stores
+            'keyword': 'computer store OR pc store OR computer parts',  # Additional keywords
+            'key': firebase_config['apiKey']  # Using your Firebase API key
+        }
+        
+        # Make the request to Google Places API
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data['status'] != 'OK':
+            raise HTTPException(
+                status_code=400,
+                detail=f"Google Places API error: {data.get('error_message', 'Unknown error')}"
+            )
+        
+        # Process the results
+        stores = []
+        for place in data.get('results', []):
+            # Calculate distance from search location
+            store_lat = place['geometry']['location']['lat']
+            store_lng = place['geometry']['location']['lng']
+            distance = calculate_distance(lat, lng, store_lat, store_lng)
+            
+            stores.append({
+                'id': place['place_id'],
+                'name': place['name'],
+                'address': place.get('vicinity', 'Address not available'),
+                'latitude': store_lat,
+                'longitude': store_lng,
+                'distance': round(distance, 2),  # Distance in km
+                'rating': place.get('rating', None),
+                'open_now': place.get('opening_hours', {}).get('open_now', None)
+            })
+        
+        # Sort by distance (nearest first)
+        stores.sort(key=lambda x: x['distance'])
+        
+        return stores
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Google Places API request failed: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to communicate with Google Places API"
+        )
+    except Exception as e:
+        logger.error(f"Error in nearby stores search: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve nearby stores"
         )
 
 #################################################################################################################
