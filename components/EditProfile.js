@@ -1,10 +1,9 @@
 import { View, Text, Pressable, ActivityIndicator, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ProfileModal from "./ProfileModal";
 import PictureModal from "./PictureModal";
 import { getToken } from '../utils/auth';
-import { HARMAN_URL } from "../ipconfig";
 import { GLOBAL_URL } from "../ipconfig";
 
 function EditProfile() {
@@ -15,32 +14,33 @@ function EditProfile() {
     const [error, setError] = useState(null);
     const [imageError, setImageError] = useState(false);
 
-    useEffect(() => {
-        const fetchProfile = async () => {
-            try {
-                const token = await getToken();
-                const response = await fetch(`${GLOBAL_URL}/get-profile`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Failed to fetch profile');
+    const fetchProfile = useCallback(async () => {
+        setLoading(true);
+        try {
+            const token = await getToken();
+            const response = await fetch(`${GLOBAL_URL}/get-profile`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
                 }
-                
-                const data = await response.json();
-                console.log("Profile data:", data); // For debugging
-                setProfile(data);
-            } catch (err) {
-                setError(err.message);
-            } finally {
-                setLoading(false);
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch profile');
             }
-        };
-        
-        fetchProfile();
+
+            const data = await response.json();
+            console.log("Profile data:", data);
+            setProfile(data);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        fetchProfile();
+    }, [fetchProfile]);
 
     if (loading) {
         return (
@@ -91,7 +91,7 @@ function EditProfile() {
                         <Image
                             source={{ 
                                 uri: profile.profile_picture,
-                                cache: 'reload' // Force image reload
+                                cache: 'reload'
                             }}
                             className="h-full w-full"
                             resizeMode="cover"
@@ -125,18 +125,22 @@ function EditProfile() {
 
             <ProfileModal 
                 visible={showModal} 
-                onClose={() => setShowModal(false)}
+                onClose={() => {
+                    setShowModal(false);
+                    fetchProfile(); // Refresh after edit
+                }}
                 profile={profile}
                 setProfile={setProfile}
             />
+
             <PictureModal 
                 visible={showModal2} 
-                onClose={() => setShowModal2(false)}
+                onClose={() => {
+                    setShowModal2(false);
+                    fetchProfile(); // Refresh after upload/delete
+                }}
                 setProfile={setProfile}
             />
-
-
-
         </>
     );
 }
