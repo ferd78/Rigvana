@@ -1417,6 +1417,100 @@ async def get_nearby_pc_stores(
             detail="Failed to retrieve nearby stores"
         )
 
+
+@app.get('/stores')
+async def list_stores():
+    """
+    List all available stores with basic information (public endpoint).
+    
+    Returns:
+    - List of stores with ID, name, address, and location
+    """
+    try:
+        stores_ref = db.collection("stores")
+        docs = stores_ref.stream()
+        
+        stores_list = []
+        for doc in docs:
+            store_data = doc.to_dict()
+            stores_list.append({
+                "store_id": doc.id,
+                "name": store_data.get("name"),
+                "address": store_data.get("address"),
+                "location": store_data.get("location"),
+                "rating": store_data.get("rating")
+            })
+        
+        return stores_list
+        
+    except Exception as e:
+        logger.error(f"Error listing stores: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve store list"
+        )
+
+@app.get('/stores/{store_id}/inventory')
+async def get_store_inventory(
+    store_id: str = Path(..., description="ID of the store to get inventory for"),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Get complete inventory of a specific store (without discounts).
+    
+    Returns:
+    - store_id: ID of the store
+    - store_name: Name of the store
+    - address: Physical address
+    - inventory: Dictionary of categories with items containing:
+        - item_id: Unique identifier
+        - name: Product name
+        - quantity: Stock count
+        - price: Regular price in IDR
+    """
+    try:
+        # Verify the token
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        
+        # Get store document
+        store_ref = db.collection("stores").document(store_id)
+        store_doc = store_ref.get()
+        
+        if not store_doc.exists:
+            raise HTTPException(status_code=404, detail="Store not found")
+        
+        store_data = store_doc.to_dict()
+        
+        # Build simplified response
+        response = {
+            "store_id": store_id,
+            "store_name": store_data.get("name"),
+            "address": store_data.get("address"),
+            "inventory": {}
+        }
+        
+        # Process inventory without discounts
+        for category, items in store_data.get("inventory", {}).items():
+            response["inventory"][category] = [
+                {
+                    "item_id": item_id,
+                    "name": details.get("name"),
+                    "quantity": details.get("quantity", 0),
+                    "price": details.get("price")
+                }
+                for item_id, details in items.items()
+            ]
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching inventory: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve inventory"
+        )
 #################################################################################################################
 
 
