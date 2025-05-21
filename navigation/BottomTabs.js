@@ -6,7 +6,7 @@ import MapPage from "../pages/MapPage";
 import Home from "../pages/Home";
 import ProfilePage from "../pages/Profile";
 import ForumStack from "./ForumStack";
-
+import MapPageWrapper from "../pages/MapPageWrapper";
 
 const Tab = createBottomTabNavigator();
 
@@ -39,7 +39,7 @@ function BottomTabs(){
         >
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Forum" component={ForumStack} />
-      <Tab.Screen name="Map" component={MapPage} />
+      <Tab.Screen name="Map" component={MapPageWrapper} />
       <Tab.Screen name="Profile" component={ProfilePage}/>
     </Tab.Navigator>
     );

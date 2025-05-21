@@ -16,8 +16,7 @@ import AddNewButton from "../components/AddNewButton";
 import RefreshButton from "../components/RefreshButton";
 import { Ionicons } from "@expo/vector-icons";
 import "../global.css";
-// import { NICO_URL } from "../ipconfig";
-import { HARMAN_URL, GLOBAL_URL} from "../ipconfig";
+import { GLOBAL_URL } from "../ipconfig";
 import { getToken } from "../utils/auth";
 import { useNavigation } from "@react-navigation/native";
 
@@ -205,13 +204,6 @@ export default function Home() {
       setLoading(false);
     }
   };
-
-
-  
-  
-
-
-
 
    // delete build
    const handleDeleteBuild = async () => {

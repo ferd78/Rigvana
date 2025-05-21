@@ -24,6 +24,7 @@ import uuid
 import json
 from fastapi.encoders import jsonable_encoder
 import logging
+import requests
 
 
 # For firebase configs
@@ -1476,7 +1477,7 @@ async def get_store_inventory(
         store_ref = db.collection("stores").document(store_id)
         store_doc = store_ref.get()
         
-        if not store_doc.exists:
+        if not store_doc.exists: 
             raise HTTPException(status_code=404, detail="Store not found")
         
         store_data = store_doc.to_dict()
