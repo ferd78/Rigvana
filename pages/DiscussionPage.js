@@ -24,15 +24,11 @@ export default function DiscussionPage({ route }) {
   const navigation = useNavigation();
   const { post: initialPost, onComment } = route.params;
 
-  // Loading states
   const [loading, setLoading] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
-
-  // Post like state
   const [postLikes, setPostLikes] = useState(initialPost.likes);
   const [postLiked, setPostLiked] = useState(initialPost.liked || false);
 
-  // Comments state (with replies)
   const [comments, setComments] = useState(
     (initialPost.comments || []).map((c) => ({
       ...c,
@@ -42,16 +38,14 @@ export default function DiscussionPage({ route }) {
       replies: [],
       isReplying: false,
       replyText: "",
-      created_at: c.created_at ? new Date(c.created_at) : new Date()
+      created_at: new Date(c.created_at)
     }))
   );
   const [commentCount, setCommentCount] = useState(comments.length);
 
-  // New-comment inputs
   const [newComment, setNewComment] = useState("");
   const [newImage, setNewImage] = useState(null);
 
-  // Request permissions on mount
   useEffect(() => {
     (async () => {
       await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -75,7 +69,16 @@ export default function DiscussionPage({ route }) {
         throw new Error(errorData.detail || 'Failed to add comment');
       }
 
-      return await response.json();
+      const json = await response.json();
+      return {
+        ...json,
+        created_at: new Date(json.created_at),
+        replies: [],
+        isReplying: false,
+        replyText: "",
+        liked: false,
+        likes: 0,
+      };
     } catch (error) {
       console.error('Comment error:', error.message);
       throw error;
@@ -90,7 +93,7 @@ export default function DiscussionPage({ route }) {
 
     try {
       setSubmittingComment(true);
-      
+
       const tempComment = {
         comment_id: uuidv4(),
         username: "currentUser",
@@ -102,7 +105,7 @@ export default function DiscussionPage({ route }) {
         created_at: new Date(),
         isReplying: false,
         replyText: "",
-        profile_picture_url: null // Will be replaced by backend
+        profile_picture_url: null
       };
 
       setComments(prev => [...prev, tempComment]);
@@ -111,18 +114,14 @@ export default function DiscussionPage({ route }) {
       setNewImage(null);
 
       const addedComment = await addComment(initialPost.id, newComment);
-      
-      setComments(prev => prev.map(c => 
-        c.comment_id === tempComment.comment_id 
-          ? { 
-              ...addedComment,
-              replies: [],
-              isReplying: false,
-              replyText: "",
-              created_at: new Date(addedComment.created_at)
-            } 
-          : c
-      ));
+
+      setComments(prev =>
+        prev.map(c =>
+          c.comment_id === tempComment.comment_id
+            ? addedComment
+            : c
+        )
+      );
 
       if (onComment) {
         onComment(addedComment.text);
@@ -186,7 +185,7 @@ export default function DiscussionPage({ route }) {
   };
 
   const toggleCommentLike = async (commentId) => {
-    setComments(prev => 
+    setComments(prev =>
       prev.map(comment => {
         if (comment.comment_id === commentId) {
           const newLikedState = !comment.liked;
@@ -202,7 +201,7 @@ export default function DiscussionPage({ route }) {
   };
 
   const toggleReplyInput = (commentId) => {
-    setComments(prev => 
+    setComments(prev =>
       prev.map(comment => {
         if (comment.comment_id === commentId) {
           return {
@@ -217,7 +216,7 @@ export default function DiscussionPage({ route }) {
   };
 
   const onChangeReplyText = (commentId, text) => {
-    setComments(prev => 
+    setComments(prev =>
       prev.map(comment => {
         if (comment.comment_id === commentId) {
           return { ...comment, replyText: text };
@@ -241,7 +240,7 @@ export default function DiscussionPage({ route }) {
         profile_picture_url: null
       };
 
-      setComments(prev => 
+      setComments(prev =>
         prev.map(comment => {
           if (comment.comment_id === commentId) {
             return {
@@ -277,7 +276,6 @@ export default function DiscussionPage({ route }) {
 
   return (
     <MainLayout>
-      {/* Header */}
       <View className="flex-row items-center justify-between p-4 border-b border-gray-800 bg-[#161010]">
         <Pressable onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="white" />
@@ -290,7 +288,6 @@ export default function DiscussionPage({ route }) {
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Original Post */}
         <View className="mb-6 pb-4 border-b border-gray-800">
           <View className="flex-row items-center justify-between mb-2">
             <View className="flex-row items-center">
@@ -306,7 +303,7 @@ export default function DiscussionPage({ route }) {
               )}
               <View className="ml-2">
                 <Text className="text-white font-bold text-base">@{initialPost.username}</Text>
-                <Text className="text-gray-500 text-xs mt-0.5">{initialPost.created_at.toLocaleString()}</Text>
+                <Text className="text-gray-500 text-xs mt-0.5">{new Date(initialPost.created_at).toLocaleString()}</Text>
               </View>
             </View>
             <Ionicons name="ellipsis-horizontal" size={24} color="white" />
@@ -346,12 +343,17 @@ export default function DiscussionPage({ route }) {
           </View>
         </View>
 
-        {/* Comments Section */}
         <Text className="text-white font-bold text-base mb-4">Comments ({commentCount})</Text>
-        {/* ... comments listing with similar tailwind classes ... */}
+
+        {comments.map(comment => (
+          <View key={comment.comment_id} className="mb-4">
+            <Text className="text-white font-semibold">@{comment.username}</Text>
+            <Text className="text-gray-300">{comment.text}</Text>
+            <Text className="text-gray-500 text-xs mt-1">{comment.created_at.toLocaleString()}</Text>
+          </View>
+        ))}
       </ScrollView>
 
-      {/* New Comment Input */}
       <View className="flex-row items-center p-4 border-t border-gray-800 bg-[#161010] absolute bottom-0 left-0 right-0">
         <Pressable onPress={pickImage} className="p-2">
           <Ionicons name="camera-outline" size={24} color="white" />

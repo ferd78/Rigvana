@@ -25,6 +25,7 @@ import json
 from fastapi.encoders import jsonable_encoder
 import logging
 import requests
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 
 # For firebase configs
@@ -160,6 +161,16 @@ class ForumPostResponse(BaseModel):
 class CommentCreate(BaseModel):
     text: str
 
+class FollowUserRequest(BaseModel):
+    target_uid: str  # The UID of the user to follow/unfollow
+
+class PostBuildWithTweet(BaseModel):
+    build_id: str
+    text: str
+    image_url: Optional[str] = None
+    audio_url: Optional[str] = None
+    location: Optional[Dict[str, float]] = None
+
 #################################################################################################################
 
 def send_email(to_email: str, content: str):
@@ -210,6 +221,62 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     distance = radius_of_earth * c
     
     return distance
+
+
+def convert_document_references(obj):
+    if isinstance(obj, firestore.DocumentReference):
+        return obj.path
+    elif isinstance(obj, dict):
+        return {k: convert_document_references(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_document_references(v) for v in obj]
+    else:
+        return obj
+    
+
+
+def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type: str):
+    try:
+        # Get the poster's username
+        poster_doc = db.collection("users").document(poster_uid).get()
+        poster_data = poster_doc.to_dict() or {}
+        poster_name = poster_data.get("username", "Someone")
+
+        # Get all users and find those who follow the poster
+        all_users = db.collection("users").stream()
+        followers = [
+            user for user in all_users
+            if poster_uid in (user.to_dict().get("following") or [])
+        ]
+
+        # Prepare notifications in a batch
+        batch = db.batch()
+
+        for follower in followers:
+            follower_uid = follower.id
+            notification_ref = db.collection("notifications").document()
+
+            notification_data = {
+                "recipient_uid": follower_uid,
+                "sender_uid": poster_uid,
+                "type": f"new_{post_type}",  # e.g., new_tweet or new_thread
+                "object_id": post_id,
+                "message": f"{poster_name} posted a new {post_type}",
+                "is_read": False,
+                "created_at": dt.datetime.utcnow()
+            }
+
+            batch.set(notification_ref, notification_data)
+
+        batch.commit()
+        print(f"Notifications sent to {len(followers)} followers")
+
+    except Exception as e:
+        print(f"Error notifying followers: {str(e)}")
+
+
+
+
 ######################################################### ENPOINTS ############################################
 
 @app.get("/")
@@ -1062,8 +1129,9 @@ async def create_forum_post(
         username = "user"
         if user_doc.exists:
             profile = user_doc.to_dict().get("profile", {})
-            username = profile.get("name", user_email.split("@")[0])
+            username = profile.get("username", user_email.split("@")[0])
 
+        # Create the forum post
         post_ref = db.collection("forum_posts").document()
         post_dict = {
             "user_id": user_uid,
@@ -1078,14 +1146,14 @@ async def create_forum_post(
             "shares": 0,
             "created_at": datetime.now(),
         }
-        
-        # Only add build_id if it exists
+
         if post_data.build_id:
             post_dict["build_id"] = post_data.build_id
 
         post_ref.set(post_dict)
+        post_id = post_ref.id  # Needed for notifications
 
-        # If there's a build reference, include build data in response
+        # Optionally fetch build data to include in response
         build_data = None
         if post_data.build_id:
             build_ref = db.collection("users").document(user_uid).collection("builds").document(post_data.build_id)
@@ -1093,9 +1161,12 @@ async def create_forum_post(
             if build_doc.exists:
                 build_data = build_doc.to_dict()
 
+        # 🔔 Notify followers
+        notify_followers_on_new_post(poster_uid=user_uid, post_id=post_id, post_type="thread")
+
         return {
             **post_dict,
-            "id": post_ref.id,
+            "id": post_id,
             "build_data": build_data
         }
 
@@ -1108,7 +1179,6 @@ async def create_forum_post(
             detail="Failed to create post"
         )
     
-
 
 
 @app.get('/forum/posts')
@@ -1128,21 +1198,26 @@ async def get_forum_posts(
         for post in posts:
             post_data = post.to_dict()
             post_data['id'] = post.id
-            
+
+            # Convert Firestore DocumentReferences to strings
+            post_data = convert_document_references(post_data)
+
             # Convert Firestore timestamps
             post_data = convert_firestore_timestamp(post_data)
-            
+
             # Check if current user liked this post
             post_data['liked'] = user_uid in post_data.get('liked_by', [])
-            
+
             # If there's a build reference, include build data
             if post_data.get('build_id'):
                 build_user_id = post_data['user_id']
                 build_ref = db.collection("users").document(build_user_id).collection("builds").document(post_data['build_id'])
                 build_doc = build_ref.get()
                 if build_doc.exists:
-                    post_data['build_data'] = convert_firestore_timestamp(build_doc.to_dict())
-            
+                    build_data = convert_firestore_timestamp(build_doc.to_dict())
+                    build_data = convert_document_references(build_data)
+                    post_data['build_data'] = build_data
+
             post_list.append(post_data)
 
         return JSONResponse(content=post_list)
@@ -1336,88 +1411,230 @@ async def share_post(
         )
     
 
-@app.get('/map/nearby-stores')
-async def get_nearby_pc_stores(
-    lat: float,
-    lng: float,
-    radius: int = 5000,  # Default 5km radius
+@app.post('/follow-user',
+          summary="Follow or unfollow a user",
+          description="Toggle follow status for another user. If already following, will unfollow.",
+          response_description="Current follow status")
+async def follow_user(
+    follow_data: FollowUserRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """
-    Find nearby PC component stores using Google Places API.
-    
-    Parameters:
-    - lat: Latitude of search location
-    - lng: Longitude of search location
-    - radius: Search radius in meters (default 5000 = 5km)
-    
-    Returns:
-    - List of nearby PC stores with name, address, distance, and coordinates
-    """
     try:
-        # Verify the token
+        # Verify the current user
         decoded_token = auth.verify_id_token(credentials.credentials)
-        
-        # Google Places API endpoint
-        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        
-        # Parameters for PC/electronics stores search
-        params = {
-            'location': f'{lat},{lng}',
-            'radius': radius,
-            'type': 'electronics_store',  # Primary category for electronics stores
-            'keyword': 'computer store OR pc store OR computer parts',  # Additional keywords
-            'key': firebase_config['apiKey']  # Using your Firebase API key
-        }
-        
-        # Make the request to Google Places API
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data['status'] != 'OK':
+        current_user_uid = decoded_token['uid']
+        target_user_uid = follow_data.target_uid
+
+        # Can't follow yourself
+        if current_user_uid == target_user_uid:
             raise HTTPException(
                 status_code=400,
-                detail=f"Google Places API error: {data.get('error_message', 'Unknown error')}"
+                detail="Cannot follow yourself"
             )
-        
-        # Process the results
-        stores = []
-        for place in data.get('results', []):
-            # Calculate distance from search location
-            store_lat = place['geometry']['location']['lat']
-            store_lng = place['geometry']['location']['lng']
-            distance = calculate_distance(lat, lng, store_lat, store_lng)
-            
-            stores.append({
-                'id': place['place_id'],
-                'name': place['name'],
-                'address': place.get('vicinity', 'Address not available'),
-                'latitude': store_lat,
-                'longitude': store_lng,
-                'distance': round(distance, 2),  # Distance in km
-                'rating': place.get('rating', None),
-                'open_now': place.get('opening_hours', {}).get('open_now', None)
-            })
-        
-        # Sort by distance (nearest first)
-        stores.sort(key=lambda x: x['distance'])
-        
-        return stores
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Google Places API request failed: {str(e)}")
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to communicate with Google Places API"
-        )
+
+        # Check if target user exists
+        target_user_ref = db.collection("users").document(target_user_uid)
+        if not target_user_ref.get().exists:
+            raise HTTPException(
+                status_code=404,
+                detail="Target user not found"
+            )
+
+        # Get current user's following list
+        current_user_ref = db.collection("users").document(current_user_uid)
+        current_user_data = current_user_ref.get().to_dict() or {}
+        following = current_user_data.get("following", [])
+
+        # Toggle follow status
+        if target_user_uid in following:
+            # Unfollow
+            following.remove(target_user_uid)
+            action = "unfollowed"
+        else:
+            # Follow
+            following.append(target_user_uid)
+            action = "followed"
+
+        # Update in Firestore
+        current_user_ref.set({
+            "following": following
+        }, merge=True)
+
+        return {
+            "action": action,
+            "currently_following": target_user_uid in following,
+            "following_count": len(following)
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error in nearby stores search: {str(e)}")
+        print(f"Error in follow-user: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to retrieve nearby stores"
+            detail="Failed to update follow status"
+        )
+    
+
+
+
+
+@app.get('/user-posts/{user_uid}',
+         summary="Get all posts by a specific user",
+         description="Returns all forum posts created by the specified user",
+         response_description="List of user's posts")
+async def get_user_posts(
+    user_uid: str = Path(..., description="The UID of the user whose posts to retrieve"),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    def clean_firestore_data(data):
+        def clean(value):
+            if isinstance(value, firestore.DocumentReference):
+                return str(value.path)  # or return None if you want to hide the path
+            elif isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [clean(v) for v in value]
+            return value
+        return clean(data)
+
+    try:
+        # Verify token
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        requesting_user_uid = decoded_token['uid']
+
+        # Check if target user exists
+        user_ref = db.collection("users").document(user_uid)
+        if not user_ref.get().exists:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Query posts by this user
+        posts_query = (
+            db.collection("forum_posts")
+            .where(filter=FieldFilter("user_id", "==", user_uid))
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+        )
+        
+        posts = posts_query.stream()
+
+        post_list = []
+        for post in posts:
+            post_data = post.to_dict()
+            post_data['id'] = post.id
+            
+            # Convert Firestore timestamps
+            post_data = convert_firestore_timestamp(post_data)
+            
+            # Check if current user liked this post
+            post_data['liked'] = requesting_user_uid in post_data.get('liked_by', [])
+
+            # If there's a build reference, include build data
+            if post_data.get('build_id'):
+                build_ref = db.collection("users").document(user_uid).collection("builds").document(post_data['build_id'])
+                build_doc = build_ref.get()
+                if build_doc.exists:
+                    build_data = convert_firestore_timestamp(build_doc.to_dict())
+                    post_data['build_data'] = clean_firestore_data(build_data)
+
+            # Clean out unserializable data
+            post_list.append(clean_firestore_data(post_data))
+
+        return JSONResponse(content=post_list)
+
+    except firebase_admin.auth.InvalidIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    except firebase_admin.auth.ExpiredIdTokenError:
+        raise HTTPException(status_code=401, detail="Expired authentication token")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error retrieving user posts: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve user posts"
         )
 
+
+@app.post('/post-build-with-tweet',
+          summary="Create a forum post with a build",
+          description="Creates a forum post that showcases one of the user's PC builds",
+          response_description="The created post with build details")
+async def post_build_with_tweet(
+    post_data: PostBuildWithTweet,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify the user
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        user_email = decoded_token.get('email', '')
+
+        # Verify the build exists and belongs to this user
+        build_ref = db.collection("users").document(user_uid).collection("builds").document(post_data.build_id)
+        build_doc = build_ref.get()
+        
+        if not build_doc.exists:
+            raise HTTPException(
+                status_code=404,
+                detail="Build not found or doesn't belong to user"
+            )
+
+        # Get username from profile or use email prefix
+        user_doc = db.collection("users").document(user_uid).get()
+        username = "user"
+        if user_doc.exists:
+            profile = user_doc.to_dict().get("profile", {})
+            username = profile.get("name", user_email.split("@")[0])
+
+        # Create the post
+        post_ref = db.collection("forum_posts").document()
+        post_dict = {
+            "user_id": user_uid,
+            "username": username,
+            "text": post_data.text,
+            "image_url": post_data.image_url,
+            "audio_url": post_data.audio_url,
+            "location": post_data.location,
+            "likes": 0,
+            "liked_by": [],
+            "comments": [],
+            "shares": 0,
+            "created_at": datetime.now(),
+            "build_id": post_data.build_id
+        }
+        
+        post_ref.set(post_dict)
+
+        # Get the build data to include in response
+        build_data = build_doc.to_dict()
+        
+        # Convert component references to component data
+        components = {}
+        for component_type, component_ref in build_data['components'].items():
+            component_doc = component_ref.get()
+            if component_doc.exists:
+                components[component_type] = component_doc.to_dict()
+
+        return {
+            **post_dict,
+            "id": post_ref.id,
+            "build_data": {
+                "name": build_data['name'],
+                "description": build_data['description'],
+                "createdAt": build_data['createdAt'].isoformat(),
+                "components": components
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating build post: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create build post"
+        )
 
 @app.get('/stores')
 async def list_stores():
@@ -1512,6 +1729,10 @@ async def get_store_inventory(
             status_code=500,
             detail="Failed to retrieve inventory"
         )
+    
+
+
+
 #################################################################################################################
 
 
