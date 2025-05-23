@@ -16,7 +16,6 @@ import MainLayout from "../components/MainLayout";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-import { Audio } from "expo-av";
 import { GLOBAL_URL } from "../ipconfig";
 import { getToken } from '../utils/auth';
 
@@ -31,8 +30,6 @@ export default function ForumPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [newText, setNewText] = useState("");
   const [newImage, setNewImage] = useState(null);
-  const [recording, setRecording] = useState(null);
-  const [newAudio, setNewAudio] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [buildPickerVisible, setBuildPickerVisible] = useState(false);
   const [selectedBuild, setSelectedBuild] = useState(null);
@@ -44,7 +41,6 @@ export default function ForumPage() {
       setSelectedTab("ForYou");
       setNewText(`Repost from @${repost.username}: ${repost.text}`);
       setNewImage(repost.image_url || null);
-      setNewAudio(repost.audio_url || null);
     }
   }, [repost]);
 
@@ -55,7 +51,6 @@ export default function ForumPage() {
   useEffect(() => {
     (async () => {
       await ImagePicker.requestMediaLibraryPermissionsAsync();
-      await Audio.requestPermissionsAsync();
     })();
   }, []);
 
@@ -83,21 +78,43 @@ export default function ForumPage() {
     }
   }
 
-  useEffect(() => {
-    (async () => {
+  const handleBuildSelect = async (buildId) => {
+    try {
       const token = await getToken();
-      const res = await fetch(`${GLOBAL_URL}/get-builds`, {
+      const res = await fetch(`${GLOBAL_URL}/get-certain-build/${buildId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
-      setUserBuilds(data);
-    })();
+
+      if (!res.ok) throw new Error("Failed to fetch full build data");
+
+      const fullBuild = await res.json();
+      setSelectedBuild(fullBuild);
+      setBuildPickerVisible(false);
+    } catch (err) {
+      console.error("Build fetch failed:", err);
+      Alert.alert("Error", "Failed to load build data");
+    }
+  };
+
+
+  useEffect(() => {
+    loadBuilds();
   }, []);
+
+  const loadBuilds = async () => {
+    const token = await getToken();
+    const res = await fetch(`${GLOBAL_URL}/get-builds`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setUserBuilds(data);
+  };
 
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchPosts();
+    setNewText('');
   };
 
   const pickImage = async () => {
@@ -106,17 +123,6 @@ export default function ForumPage() {
       quality: 0.7,
     });
     if (!res.canceled && res.assets?.length) setNewImage(res.assets[0].uri);
-  };
-
-  const toggleRecording = async () => {
-    if (recording) {
-      await recording.stopAndUnloadAsync();
-      setNewAudio(recording.getURI());
-      setRecording(null);
-    } else {
-      const { recording: rec } = await Audio.Recording.createAsync(Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY);
-      setRecording(rec);
-    }
   };
 
   async function uploadFile(uri, type) {
@@ -133,30 +139,46 @@ export default function ForumPage() {
     return (await res.json()).url;
   }
 
+  const handleResetPostInputs = async () => {
+    setNewText("");
+    setNewImage(null);
+    setSelectedBuild(null);
+  };
+
+
   const handlePost = async () => {
-    if (!newText.trim())
-      return Alert.alert("Error", "Post text is required");
+    if (!newText.trim()) {
+      Alert.alert("Error", "Post text is required");
+      return;
+    }
+
+    setUploading(true);
+
     try {
-      setUploading(true);
-      const imgUrl = newImage && await uploadFile(newImage, 'image');
-      const audUrl = newAudio && await uploadFile(newAudio, 'audio');
       const token = await getToken();
+
+      const imgUrl = newImage ? await uploadFile(newImage, "image") : null;
+
       const payload = {
         text: newText,
         ...(imgUrl && { image_url: imgUrl }),
-        ...(audUrl && { audio_url: audUrl }),
-        ...(selectedBuild && { build_id: selectedBuild.id })
+        ...(selectedBuild && { build_id: selectedBuild.id }),
       };
+
       const res = await fetch(`${GLOBAL_URL}/forum/posts`, {
-        method: 'POST',
+        method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const msg = await res.text();
+        console.error("POST failed:", msg);
+        throw new Error("Failed to create post");
+      }
 
       const np = await res.json();
 
@@ -171,17 +193,21 @@ export default function ForumPage() {
         ...prev,
       ]);
 
-      setNewText('');
+      // ✅ Reset inputs
+      setNewText("");
       setNewImage(null);
-      setNewAudio(null);
+      setSelectedBuild(null);
 
       Alert.alert("Success", "Post created successfully");
-    } catch {
-      // Alert.alert("Error", "Failed to create post");
+
+    } catch (err) {
+      console.error("Post error:", err);
+      Alert.alert("Error", err.message || "Failed to create post");
     } finally {
       setUploading(false);
     }
   };
+
 
   const toggleForumLike = async id => {
     try {
@@ -254,23 +280,25 @@ export default function ForumPage() {
               <Pressable onPress={pickImage} className="mr-4">
                 <Ionicons name="camera-outline" size={24} color="#888" />
               </Pressable>
-
-              <Pressable onPress={toggleRecording} className="mr-4">
-                {recording 
-                ? <ActivityIndicator color="#888" /> 
-                : <Ionicons name="mic-outline" size={24} color="#888" />}
-              </Pressable>
-              
               
               <Pressable onPress={() => setBuildPickerVisible(true)} className="mr-4">
                 <Ionicons name="albums-outline" size={24} color="#888" />
               </Pressable>
+
+              <Pressable onPress={handleResetPostInputs} className="mr-4">
+                <Ionicons name="close-outline" size={24} color="#888"/>
+              </Pressable>
             </View>
             {newImage && <Image source={{ uri: newImage }} className="w-full h-48 rounded-xl mt-2" resizeMode="cover" />}
-            {newAudio && <Text className="text-gray-300 mt-2">🎵 Recorded: {newAudio.split('/').pop()}</Text>}
-            <Pressable onPress={handlePost} disabled={uploading} className="mt-3 bg-[#9fcfff] px-4 py-2 rounded-full items-center">
+            <Pressable onPress={() => { handlePost(); handleResetPostInputs();}} onRefresh={onRefresh} disabled={uploading} className="mt-3 bg-[#9fcfff] px-4 py-2 rounded-full items-center">
               {uploading ? <ActivityIndicator color="#000" /> : <Text className="text-black font-bold">Post</Text>}
             </Pressable>
+
+            {selectedBuild && (
+            <Text className="text-white text-helvetica font-semibold mt-2">
+              Selected Build: {selectedBuild.name}
+            </Text>
+          )}
           </View>
         )}
 
@@ -298,7 +326,6 @@ export default function ForumPage() {
             </View>
             <Text className="text-white my-2">{p.text}</Text>
             {p.image_url && <Image source={{ uri: p.image_url }} className="w-full h-52 rounded-xl" />}
-            {p.audio_url?.length > 5 && <AudioPlayer uri={p.audio_url} />}
             {p.build_data && (
               <View className="bg-gray-700 rounded-lg p-3 mt-2 flex-row items-center justify-between">
                 <View>
@@ -351,54 +378,36 @@ export default function ForumPage() {
                   onPress={() => {
                     setSelectedBuild(build);
                     setBuildPickerVisible(false);
+                    loadBuilds();
                   }}
+
+                  onRefresh={onRefresh}
+
                   className="bg-[#333] p-3 rounded-lg mb-2"
                 >
                   <Text className="text-white font-bold">{build.name}</Text>
                   <Text className="text-gray-400 text-sm">{build.description}</Text>
                 </Pressable>
+
+                
               ))}
             </ScrollView>
+            
+            <View className="flex-row justify-between items-center">
+              <Pressable onPress={loadBuilds} className="mt-3 items-center">
+                <Ionicons name="refresh-outline" size={28} color="white"/>
+              </Pressable>
+            
+              <Pressable onPress={() => setBuildPickerVisible(false)} className="mt-3 items-center">
+                <Ionicons name="close-circle-outline" size={28} color="white" />
+              </Pressable>
+            </View>
 
-            <Pressable onPress={() => setBuildPickerVisible(false)} className="mt-3 items-center">
-              <Ionicons name="close-circle-outline" size={28} color="white" />
-            </Pressable>
+            
           </View>
         </View>
       </Modal>
 
     </MainLayout>
-  );
-}
-
-function AudioPlayer({ uri }) {
-  const [sound, setSound] = useState(null);
-  const [playing, setPlaying] = useState(false);
-
-  useEffect(() => {
-    return () => sound?.unloadAsync();
-  }, [sound]);
-
-  const onToggle = async () => {
-    if (!sound) {
-      const { sound: s } = await Audio.Sound.createAsync({ uri });
-      s.setOnPlaybackStatusUpdate(st => st.didJustFinish && setPlaying(false));
-      setSound(s);
-      await s.playAsync();
-      setPlaying(true);
-    } else if (playing) {
-      await sound.pauseAsync();
-      setPlaying(false);
-    } else {
-      await sound.playAsync();
-      setPlaying(true);
-    }
-  };
-
-  return (
-    <Pressable onPress={onToggle} className="flex-row items-center mt-2">
-      <Ionicons name={playing ? "pause-circle-outline" : "play-circle-outline"} size={28} color="#888" />
-      <Text className="text-gray-300 ml-2">{playing ? "Playing..." : "Play audio"}</Text>
-    </Pressable>
   );
 }

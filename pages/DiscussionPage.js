@@ -23,6 +23,7 @@ import 'react-native-get-random-values';
 export default function DiscussionPage({ route }) {
   const navigation = useNavigation();
   const { post: initialPost, onComment } = route.params;
+  const [userUid, setUserUid] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
@@ -51,6 +52,45 @@ export default function DiscussionPage({ route }) {
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      const token = await getToken();
+      const decoded = JSON.parse(atob(token.split('.')[1])); // decode Firebase JWT
+      setUserUid(decoded.user_id); // or 'uid' depending on your backend
+    })();
+  }, []);
+
+    const handleDeletePost = async () => {
+    Alert.alert("Confirm", "Are you sure you want to delete this post?", [
+      {
+        text: "Cancel",
+        style: "cancel"
+      },
+      {
+        text: "Delete",
+        onPress: async () => {
+          try {
+            const token = await getToken();
+            const res = await fetch(`${GLOBAL_URL}/forum/posts/${initialPost.id}`, {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
+            });
+
+            if (!res.ok) throw new Error("Delete failed");
+
+            Alert.alert("Deleted", "Post deleted successfully");
+            navigation.goBack();
+          } catch (err) {
+            console.error("Delete error:", err);
+            Alert.alert("Error", "Failed to delete post");
+          }
+        }
+      }
+    ]);
+  };
 
   const addComment = async (postId, text) => {
     try {
@@ -306,7 +346,11 @@ export default function DiscussionPage({ route }) {
                 <Text className="text-gray-500 text-xs mt-0.5">{new Date(initialPost.created_at).toLocaleString()}</Text>
               </View>
             </View>
-            <Ionicons name="ellipsis-horizontal" size={24} color="white" />
+            {userUid === initialPost.user_id && (
+              <Pressable onPress={handleDeletePost}>
+                <Ionicons name="trash-outline" size={24} color="#ff4c4c" />
+              </Pressable>
+            )}
           </View>
 
           <Text className="text-white text-base leading-6 my-3">{initialPost.text}</Text>
