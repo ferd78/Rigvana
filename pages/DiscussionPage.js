@@ -280,7 +280,7 @@ export default function DiscussionPage({ route }) {
         <Pressable onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="white" />
         </Pressable>
-        <Text className="text-white font-bold text-lg">Discussion</Text>
+        <Text className="text-white font-bold text-lg">Discussions</Text>
         <View className="w-7" />
       </View>
 

@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Modal
 } from "react-native";
 import MainLayout from "../components/MainLayout";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +34,10 @@ export default function ForumPage() {
   const [recording, setRecording] = useState(null);
   const [newAudio, setNewAudio] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [buildPickerVisible, setBuildPickerVisible] = useState(false);
+  const [selectedBuild, setSelectedBuild] = useState(null);
+  const [userBuilds, setUserBuilds] = useState([]);
+
 
   useEffect(() => {
     if (repost) {
@@ -77,6 +82,18 @@ export default function ForumPage() {
       setRefreshing(false);
     }
   }
+
+  useEffect(() => {
+    (async () => {
+      const token = await getToken();
+      const res = await fetch(`${GLOBAL_URL}/get-builds`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setUserBuilds(data);
+    })();
+  }, []);
+
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -128,6 +145,7 @@ export default function ForumPage() {
         text: newText,
         ...(imgUrl && { image_url: imgUrl }),
         ...(audUrl && { audio_url: audUrl }),
+        ...(selectedBuild && { build_id: selectedBuild.id })
       };
       const res = await fetch(`${GLOBAL_URL}/forum/posts`, {
         method: 'POST',
@@ -159,7 +177,7 @@ export default function ForumPage() {
 
       Alert.alert("Success", "Post created successfully");
     } catch {
-      Alert.alert("Error", "Failed to create post");
+      // Alert.alert("Error", "Failed to create post");
     } finally {
       setUploading(false);
     }
@@ -226,16 +244,26 @@ export default function ForumPage() {
           <View className="my-4 p-3 bg-[#222] rounded-xl">
             <TextInput
               className="text-white min-h-[40px]"
-              placeholder="What's on your mind?"
+              placeholder="What's on your mind today?"
               placeholderTextColor="#888"
               value={newText}
               onChangeText={setNewText}
               multiline
             />
             <View className="flex-row mt-2">
-              <Pressable onPress={pickImage} className="mr-4"><Ionicons name="camera-outline" size={24} color="#888" /></Pressable>
+              <Pressable onPress={pickImage} className="mr-4">
+                <Ionicons name="camera-outline" size={24} color="#888" />
+              </Pressable>
+
               <Pressable onPress={toggleRecording} className="mr-4">
-                {recording ? <ActivityIndicator color="#888" /> : <Ionicons name="mic-outline" size={24} color="#888" />}
+                {recording 
+                ? <ActivityIndicator color="#888" /> 
+                : <Ionicons name="mic-outline" size={24} color="#888" />}
+              </Pressable>
+              
+              
+              <Pressable onPress={() => setBuildPickerVisible(true)} className="mr-4">
+                <Ionicons name="albums-outline" size={24} color="#888" />
               </Pressable>
             </View>
             {newImage && <Image source={{ uri: newImage }} className="w-full h-48 rounded-xl mt-2" resizeMode="cover" />}
@@ -269,12 +297,22 @@ export default function ForumPage() {
               </Pressable>
             </View>
             <Text className="text-white my-2">{p.text}</Text>
-            {p.image_url && <Image source={{ uri: p.image_url }} className="w-full h-48 rounded-xl" />}
-            {p.audio_url && <AudioPlayer uri={p.audio_url} />}
+            {p.image_url && <Image source={{ uri: p.image_url }} className="w-full h-52 rounded-xl" />}
+            {p.audio_url?.length > 5 && <AudioPlayer uri={p.audio_url} />}
             {p.build_data && (
-              <View className="bg-gray-700 rounded-lg p-3 mt-2">
-                <Text className="text-white font-bold text-base">{p.build_data.name}</Text>
-                <Text className="text-gray-300 text-sm mt-1">{p.build_data.description}</Text>
+              <View className="bg-gray-700 rounded-lg p-3 mt-2 flex-row items-center justify-between">
+                <View>
+                  <Text className="text-white font-bold text-base">{p.build_data.name}</Text>
+                  <Text className="text-gray-300 text-sm mt-1">{p.build_data.description}</Text>
+                </View>
+               
+                <Pressable
+                  onPress={() => navigation.navigate("ViewPage", { buildId: p.build_id })}
+                  className=""
+                >
+                  <Ionicons name="eye-outline" size={24} color={"white"}/>
+                </Pressable>
+        
               </View>
             )}
             <View className="flex-row justify-around mt-2">
@@ -294,6 +332,40 @@ export default function ForumPage() {
           </View>
         ))}
       </ScrollView>
+
+      <Modal
+        visible={buildPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBuildPickerVisible(false)}
+      >
+        <View className="flex-1 justify-center items-center bg-black/60">
+          <View className="bg-[#222] p-5 rounded-xl w-4/5 max-h-[60%]">
+            <Text className="text-white text-lg font-bold mb-4">Choose from your builds: </Text>
+
+            <ScrollView>
+              {userBuilds.map((build) => (
+                <Pressable
+                  key={build.id}
+                  onPress={() => {
+                    setSelectedBuild(build);
+                    setBuildPickerVisible(false);
+                  }}
+                  className="bg-[#333] p-3 rounded-lg mb-2"
+                >
+                  <Text className="text-white font-bold">{build.name}</Text>
+                  <Text className="text-gray-400 text-sm">{build.description}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Pressable onPress={() => setBuildPickerVisible(false)} className="mt-3 items-center">
+              <Ionicons name="close-circle-outline" size={28} color="white" />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
     </MainLayout>
   );
 }
