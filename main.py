@@ -1378,6 +1378,55 @@ async def add_comment(
             detail="An unexpected error occurred while adding comment"
         )
 
+
+@app.delete('/forum/posts/{post_id}',
+          summary="Delete a forum post",
+          description="Delete a forum post if the requesting user is the owner",
+          response_description="Success message")
+async def delete_forum_post(
+    post_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify token and get user UID
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        # Get the post document
+        post_ref = db.collection("forum_posts").document(post_id)
+        post_doc = post_ref.get()
+
+        # Check if post exists
+        if not post_doc.exists:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        post_data = post_doc.to_dict()
+
+        # Verify ownership
+        if post_data.get('user_id') != user_uid:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only delete your own posts"
+            )
+
+        # Delete the post
+        post_ref.delete()
+
+        return {"message": "Post deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting post: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete post"
+        )
+
+
 @app.post('/forum/posts/{post_id}/share',
           summary="Share a post",
           description="Increment the share count of a post",
