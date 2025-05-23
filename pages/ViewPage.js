@@ -7,45 +7,55 @@ import { GLOBAL_URL } from "../ipconfig";
 
 export default function ViewPage({ route, navigation }) {
   const [viewBuild, setViewBuild] = useState(null);
+  const [loading, setLoading] = useState(true);
   const buildId = route.params?.buildId;
+  const userId = route.params?.userId;
   const buildFromParams = route.params?.build;
 
   useEffect(() => {
     if (buildFromParams) {
       console.log("📦 Build passed directly:", buildFromParams);
       setViewBuild(buildFromParams);
+      setLoading(false);
       return;
     }
 
-    if (!buildId) {
-      Alert.alert("Error", "No build ID provided.");
+    if (!buildId || !userId) {
+      Alert.alert("Error", "No build ID or user ID provided.");
       navigation.goBack();
       return;
     }
 
     const fetchBuild = async () => {
       try {
-        console.log("📥 Fetching build with ID:", buildId);
+        setLoading(true);
+        console.log("📥 Fetching build with ID:", buildId, "from user:", userId);
         const token = await getToken();
-        const res = await fetch(`${GLOBAL_URL}/get-certain-build/${buildId}`, {
+        const res = await fetch(`${GLOBAL_URL}/get-public-build/${buildId}/${userId}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error("Failed to fetch build");
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Failed to fetch build");
+        }
+        
         const data = await res.json();
-        console.log("✅ Got build data:", data);
+        console.log("✅ Got public build data:", data);
         setViewBuild(data);
       } catch (err) {
         console.error("❌ Build fetch failed:", err);
         Alert.alert("Error", err.message || "Build not found");
         navigation.goBack();
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchBuild();
-  }, []);
+  }, [buildId, userId]);
 
-  if (!viewBuild) {
+  if (loading || !viewBuild) {
     return (
       <MainLayout>
         <View className="flex-1 justify-center items-center">
@@ -66,7 +76,7 @@ export default function ViewPage({ route, navigation }) {
         <Text className="text-gray-400 mb-6">{viewBuild.description}</Text>
 
         {viewBuild.components && Object.entries(viewBuild.components).map(([slot, comp]) =>
-          comp ? (
+          comp && !comp.error ? (
             <View key={slot} className="bg-zinc-700 rounded-xl p-4 mb-4">
               <Text className="text-white font-bold text-lg mb-2">{slot.toUpperCase()}</Text>
               {comp.image_url && (
@@ -92,7 +102,12 @@ export default function ViewPage({ route, navigation }) {
                 {comp.description ?? "No description available"}
               </Text>
             </View>
-          ) : null
+          ) : (
+            <View key={slot} className="bg-zinc-700 rounded-xl p-4 mb-4">
+              <Text className="text-white font-bold text-lg mb-2">{slot.toUpperCase()}</Text>
+              <Text className="text-gray-300">Component not found</Text>
+            </View>
+          )
         )}
 
         <View className="mb-2">

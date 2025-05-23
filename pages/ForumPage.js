@@ -305,14 +305,15 @@ export default function ForumPage() {
                   <Text className="text-white font-bold text-base">{p.build_data.name}</Text>
                   <Text className="text-gray-300 text-sm mt-1">{p.build_data.description}</Text>
                 </View>
-               
                 <Pressable
-                  onPress={() => navigation.navigate("ViewPage", { buildId: p.build_id })}
+                  onPress={() => navigation.navigate("ViewPage", { 
+                    buildId: p.build_id,
+                    userId: p.user_id  // Add user_id to params
+                  })}
                   className=""
                 >
                   <Ionicons name="eye-outline" size={24} color={"white"}/>
                 </Pressable>
-        
               </View>
             )}
             <View className="flex-row justify-around mt-2">

@@ -917,6 +917,7 @@ async def update_build(
 
 
 
+###################################### PROFILE PAGE ENDPOINTS #############################################
 
 @app.post('/set-profile', summary="Set or update user profile")
 async def set_profile(
@@ -1103,7 +1104,7 @@ async def delete_profile_picture(
 
 
 
-    # Forum endpoints
+    ###################################### Forum endpoints #############################################
 @app.post('/forum/posts',
           summary="Create a new forum post",
           description="Create a new post in the forum",
@@ -1635,6 +1636,80 @@ async def post_build_with_tweet(
             status_code=500,
             detail="Failed to create build post"
         )
+
+
+@app.get('/get-public-build/{build_id}/{user_id}',
+         summary="Get detailed information about any user's build",
+         description="Returns public information about a specific build including component details",
+         response_description="Detailed build information with components")
+async def get_public_build_details(
+    build_id: str = Path(..., description="The ID of the build to retrieve"),
+    user_id: str = Path(..., description="The ID of the user who owns the build"),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Get detailed information about any user's build when accessed through a forum post.
+    """
+    try:
+        # Verify the token (but don't check if build belongs to this user)
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        current_user_uid = decoded_token['uid']
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+
+    try:
+        # Get the build document from the specified user's collection
+        build_ref = db.collection("users").document(user_id).collection("builds").document(build_id)
+        build_doc = build_ref.get()
+        
+        if not build_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Build not found"
+            )
+            
+        build_data = build_doc.to_dict()
+        
+        # Prepare response with basic build info
+        response = {
+            "id": build_doc.id,
+            "name": build_data['name'],
+            "description": build_data['description'],
+            "createdAt": build_data['createdAt'].isoformat(),
+            "components": {}
+        }
+        
+        # Fetch details for each component
+        for component_type, component_ref in build_data['components'].items():
+            component_doc = component_ref.get()
+            if component_doc.exists:
+                component_data = component_doc.to_dict()
+                component_data['id'] = component_ref.id
+                response['components'][component_type] = component_data
+            else:
+                response['components'][component_type] = {
+                    "error": "Component not found",
+                    "id": component_ref.id
+                }
+        
+        return JSONResponse(content=response, status_code=200)
+        
+    except Exception as e:
+        print(f"Error retrieving build details: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve build details"
+        )
+
+
+#################################################################################################################################
+
+
+
+###################################### MAP PAGE ENDPOINTS ########################## #############################################
 
 @app.get('/stores')
 async def list_stores():
