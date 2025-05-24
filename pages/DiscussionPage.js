@@ -167,91 +167,97 @@ export default function DiscussionPage({ route }) {
   };
 
   const uploadImage = async (uri) => {
-    const formData = new FormData();
+  try {
     const filename = uri.split('/').pop();
-    const match = /\.(\w+)$/.exec(filename || '');
-    const type = match ? `image/${match[1]}` : `image`;
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1]}` : 'image';
 
-    formData.append("file", {
+    const formData = new FormData();
+    formData.append('file', {
       uri,
       name: filename,
       type,
     });
 
     const token = await getToken();
-    const response = await fetch(`${GLOBAL_URL}/upload-image`, {
-      method: "POST",
+    const response = await fetch(`${GLOBAL_URL}/upload-comment-image`, {
+      method: 'POST',
       headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "multipart/form-data",
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'multipart/form-data',
       },
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error("Image upload failed");
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Image upload failed');
     }
 
     const data = await response.json();
-    return data.url; // Assuming response is { "url": "https://..." }
-  };
+    return data.image_url; // Note: Changed from data.url to data.image_url
+  } catch (error) {
+    console.error('Upload error:', error);
+    throw error;
+  }
+};
 
   const handleSend = async () => {
-    if (!newComment.trim()) {
-      Alert.alert("Error", "Comment text is required");
-      return;
+  if (!newComment.trim() && !newImage) {
+    Alert.alert("Error", "Comment text or image is required");
+    return;
+  }
+
+  let imageUrl = null;
+
+  try {
+    setSubmittingComment(true);
+
+    if (newImage) {
+      imageUrl = await uploadImage(newImage);
     }
 
-    let imageUrl = null;
+    const tempId = uuidv4();
+    const tempComment = {
+      comment_id: tempId,
+      username: "currentUser",
+      text: newComment,
+      image_url: imageUrl, // Changed from imageUri to image_url to match backend
+      likes: 0,
+      liked: false,
+      replies: [],
+      created_at: new Date(),
+      isReplying: false,
+      replyText: "",
+      profile_picture_url: null,
+      user_id: userUid
+    };
 
-    try {
-      setSubmittingComment(true);
+    setComments(prev => [...prev, tempComment]);
+    setCommentCount(c => c + 1);
+    setNewComment("");
+    setNewImage(null);
 
-      if (newImage) {
-        imageUrl = await uploadImage(newImage);
-      }
+    const addedComment = await addComment(initialPost.id, newComment, imageUrl);
 
-      const tempId = uuidv4();
-      const tempComment = {
-        comment_id: tempId,
-        username: "currentUser",
-        text: newComment,
-        imageUri: newImage,
-        likes: 0,
-        liked: false,
-        replies: [],
-        created_at: new Date(),
-        isReplying: false,
-        replyText: "",
-        profile_picture_url: null,
-        user_id: userUid // Add user_id to the comment
-      };
+    setComments(prev =>
+      prev.map(c =>
+        c.comment_id === tempId
+          ? { ...addedComment, user_id: userUid }
+          : c
+      )
+    );
 
-      setComments(prev => [...prev, tempComment]);
-      setCommentCount(c => c + 1);
-      setNewComment("");
-      setNewImage(null);
-
-      const addedComment = await addComment(initialPost.id, newComment, imageUrl);
-
-      setComments(prev =>
-        prev.map(c =>
-          c.comment_id === tempId
-            ? { ...addedComment, user_id: userUid } // Ensure user_id is preserved
-            : c
-        )
-      );
-
-      if (onComment) {
-        onComment(addedComment.text);
-      }
-    } catch (error) {
-      console.error("Comment error:", error);
-      Alert.alert("Error", error.message || "Failed to post comment");
-    } finally {
-      setSubmittingComment(false);
+    if (onComment) {
+      onComment(addedComment.text);
     }
-  };
+  } catch (error) {
+    console.error("Comment error:", error);
+    Alert.alert("Error", error.message || "Failed to post comment");
+  } finally {
+    setSubmittingComment(false);
+  }
+};
 
   const pickImage = async () => {
     try {
