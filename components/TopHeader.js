@@ -13,9 +13,9 @@ function TopHeader(){
         <View className="pt-8 px-4 flex-row items-center justify-between">
                 <Text className="text-ymblue font-jura-bold text-3xl tracking-widest">RIGVANA</Text>
                 <View className="flex-row gap-3 items-center">
-                    <Pressable>
-                        <Ionicons name="notifications-outline" color={"white"} size={28}/>
-                    </Pressable>
+                   <Pressable onPress={() => nav.navigate("Notifications")}>
+                     <Ionicons name="notifications-outline" color="white" size={28} />
+                   </Pressable>
                     <Pressable onPress={() => nav.navigate("Settings")}>
                         <Ionicons name="settings-outline" color={"white"} size={32}/>
                     </Pressable>
