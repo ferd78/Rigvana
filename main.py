@@ -1614,7 +1614,79 @@ async def follow_user(
     
 
 
+@app.get('/forum/following-posts',
+         summary="Get posts from followed users",
+         description="Returns all forum posts from users that the current user follows",
+         response_description="List of posts from followed users")
+async def get_following_posts(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify token and get current user
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        current_user_uid = decoded_token['uid']
 
+        # Get the current user's following list
+        user_ref = db.collection("users").document(current_user_uid)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+
+        user_data = user_doc.to_dict()
+        following = user_data.get("following", [])
+        
+        # If not following anyone, return empty array
+        if not following:
+            return []
+
+        # Query posts from followed users, ordered by date (newest first)
+        posts_ref = db.collection("forum_posts")\
+                      .where("user_id", "in", following)\
+                      .order_by("created_at", direction=firestore.Query.DESCENDING)
+        
+        posts = posts_ref.stream()
+        post_list = []
+
+        for post in posts:
+            post_data = post.to_dict()
+            post_data['id'] = post.id
+
+            # Convert Firestore DocumentReferences to strings
+            post_data = convert_document_references(post_data)
+
+            # Convert Firestore timestamps
+            post_data = convert_firestore_timestamp(post_data)
+
+            # Check if current user liked this post
+            post_data['liked'] = current_user_uid in post_data.get('liked_by', [])
+
+            # Include build data if exists
+            if post_data.get('build_id'):
+                build_user_id = post_data['user_id']
+                build_ref = db.collection("users").document(build_user_id)\
+                                .collection("builds").document(post_data['build_id'])
+                build_doc = build_ref.get()
+                if build_doc.exists:
+                    build_data = convert_firestore_timestamp(build_doc.to_dict())
+                    build_data = convert_document_references(build_data)
+                    post_data['build_data'] = build_data
+
+            post_list.append(post_data)
+
+        return JSONResponse(content=post_list)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error retrieving following posts: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve posts from followed users"
+        )
 
 @app.get('/user-posts/{user_uid}',
          summary="Get all posts by a specific user",
