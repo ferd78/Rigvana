@@ -160,6 +160,7 @@ class ForumPostResponse(BaseModel):
 
 class CommentCreate(BaseModel):
     text: str
+    image_url: Optional[str] = None  
 
 class FollowUserRequest(BaseModel):
     target_uid: str  # The UID of the user to follow/unfollow
@@ -917,7 +918,6 @@ async def update_build(
 
 
 
-###################################### PROFILE PAGE ENDPOINTS #############################################
 
 @app.post('/set-profile', summary="Set or update user profile")
 async def set_profile(
@@ -1104,7 +1104,7 @@ async def delete_profile_picture(
 
 
 
-    ###################################### Forum endpoints #############################################
+    # Forum endpoints
 @app.post('/forum/posts',
           summary="Create a new forum post",
           description="Create a new post in the forum",
@@ -1283,36 +1283,19 @@ async def add_comment(
     post_id: str,
     comment_data: CommentCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    request: Request = None  # For logging purposes
+    request: Request = None
 ):
     try:
-        # Log incoming request
-        if request:
-            try:
-                body = await request.json()
-                logger.info(f"Comment request received for post {post_id}: {body}")
-            except:
-                logger.warning("Could not parse request body for logging")
-
         # Verify user token
-        try:
-            decoded_token = auth.verify_id_token(credentials.credentials)
-            user_uid = decoded_token['uid']
-            user_email = decoded_token.get('email', '')
-            logger.debug(f"Authenticated user: {user_uid}")
-        except Exception as auth_error:
-            logger.error(f"Authentication failed: {str(auth_error)}")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid or expired authentication token"
-            )
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        user_email = decoded_token.get('email', '')
 
-        # Validate comment text
-        if not comment_data.text or not comment_data.text.strip():
-            logger.error("Empty comment text received")
+        # Validate comment has either text or image
+        if not comment_data.text.strip() and not comment_data.image_url:
             raise HTTPException(
                 status_code=400,
-                detail="Comment text cannot be empty"
+                detail="Comment must have either text or image"
             )
 
         # Get post reference
@@ -1320,45 +1303,35 @@ async def add_comment(
         post_snapshot = post_ref.get()
         
         if not post_snapshot.exists:
-            logger.error(f"Post not found: {post_id}")
             raise HTTPException(
                 status_code=404,
                 detail="Post not found"
             )
 
         # Get username
-        username = user_email.split("@")[0]  # Default to email prefix
-        try:
-            user_doc = db.collection("users").document(user_uid).get()
-            if user_doc.exists:
-                profile = user_doc.to_dict().get("profile", {})
-                username = profile.get("name", username)
-            logger.debug(f"Resolved username: {username}")
-        except Exception as user_error:
-            logger.warning(f"Could not fetch user profile: {str(user_error)}")
-            # Continue with default username
+        username = user_email.split("@")[0]
+        profile_picture_url = None
+        user_doc = db.collection("users").document(user_uid).get()
+        if user_doc.exists:
+            profile = user_doc.to_dict().get("profile", {})
+            username = profile.get("username", username)
+            profile_picture_url = profile.get("profile_picture_url")
 
         # Create comment object
         comment = {
             "user_id": user_uid,
             "username": username,
             "text": comment_data.text.strip(),
+            "image_url": comment_data.image_url,
             "created_at": datetime.now(),
-            "comment_id": str(uuid.uuid4())  # Add unique ID for each comment
+            "comment_id": str(uuid.uuid4()),
+            "profile_picture_url": profile_picture_url  # Add profile picture
         }
 
         # Add to Firestore
-        try:
-            post_ref.update({
-                "comments": firestore.ArrayUnion([comment])
-            })
-            logger.info(f"Comment added to post {post_id} by user {user_uid}")
-        except Exception as firestore_error:
-            logger.error(f"Firestore update failed: {str(firestore_error)}")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to update post with new comment"
-            )
+        post_ref.update({
+            "comments": firestore.ArrayUnion([comment])
+        })
 
         # Convert datetime to ISO format for JSON serialization
         comment_serialized = {
@@ -1369,10 +1342,8 @@ async def add_comment(
         return comment_serialized
 
     except HTTPException:
-        # Re-raise HTTP exceptions we created
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in add_comment: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while adding comment"
@@ -1424,6 +1395,47 @@ async def delete_forum_post(
         raise HTTPException(
             status_code=500,
             detail="Failed to delete post"
+        )
+
+
+
+
+
+@app.post('/upload-comment-image')
+async def upload_comment_image(
+    file: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify token
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(400, detail="Only image files are allowed")
+
+        # Generate unique filename
+        file_ext = file.filename.split('.')[-1]
+        filename = f"comments/{user_uid}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to Firebase Storage
+        bucket = storage.bucket()
+        blob = bucket.blob(filename)
+        
+        # Upload the file
+        contents = await file.read()
+        blob.upload_from_string(contents, content_type=file.content_type)
+        
+        # Make the file publicly readable
+        blob.make_public()
+        
+        return {"image_url": blob.public_url}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload image: {str(e)}"
         )
 
 
@@ -1685,80 +1697,6 @@ async def post_build_with_tweet(
             status_code=500,
             detail="Failed to create build post"
         )
-
-
-@app.get('/get-public-build/{build_id}/{user_id}',
-         summary="Get detailed information about any user's build",
-         description="Returns public information about a specific build including component details",
-         response_description="Detailed build information with components")
-async def get_public_build_details(
-    build_id: str = Path(..., description="The ID of the build to retrieve"),
-    user_id: str = Path(..., description="The ID of the user who owns the build"),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    """
-    Get detailed information about any user's build when accessed through a forum post.
-    """
-    try:
-        # Verify the token (but don't check if build belongs to this user)
-        decoded_token = auth.verify_id_token(credentials.credentials)
-        current_user_uid = decoded_token['uid']
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-
-    try:
-        # Get the build document from the specified user's collection
-        build_ref = db.collection("users").document(user_id).collection("builds").document(build_id)
-        build_doc = build_ref.get()
-        
-        if not build_doc.exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Build not found"
-            )
-            
-        build_data = build_doc.to_dict()
-        
-        # Prepare response with basic build info
-        response = {
-            "id": build_doc.id,
-            "name": build_data['name'],
-            "description": build_data['description'],
-            "createdAt": build_data['createdAt'].isoformat(),
-            "components": {}
-        }
-        
-        # Fetch details for each component
-        for component_type, component_ref in build_data['components'].items():
-            component_doc = component_ref.get()
-            if component_doc.exists:
-                component_data = component_doc.to_dict()
-                component_data['id'] = component_ref.id
-                response['components'][component_type] = component_data
-            else:
-                response['components'][component_type] = {
-                    "error": "Component not found",
-                    "id": component_ref.id
-                }
-        
-        return JSONResponse(content=response, status_code=200)
-        
-    except Exception as e:
-        print(f"Error retrieving build details: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve build details"
-        )
-
-
-#################################################################################################################################
-
-
-
-###################################### MAP PAGE ENDPOINTS ########################## #############################################
 
 @app.get('/stores')
 async def list_stores():

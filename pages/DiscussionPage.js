@@ -92,7 +92,7 @@ export default function DiscussionPage({ route }) {
     ]);
   };
 
-  const addComment = async (postId, text) => {
+  const addComment = async (postId, text, imageUrl = null) => {
     try {
       const token = await getToken();
       const response = await fetch(`${GLOBAL_URL}/forum/posts/${postId}/comments`, {
@@ -101,7 +101,7 @@ export default function DiscussionPage({ route }) {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: text.trim() }),
+        body: JSON.stringify({ text: text.trim(), image_url: imageUrl }),
       });
 
       if (!response.ok) {
@@ -125,56 +125,93 @@ export default function DiscussionPage({ route }) {
     }
   };
 
-  const handleSend = async () => {
-    if (!newComment.trim()) {
-      Alert.alert("Error", "Comment text is required");
-      return;
+const uploadImage = async (uri) => {
+  const formData = new FormData();
+  const filename = uri.split('/').pop();
+  const match = /\.(\w+)$/.exec(filename || '');
+  const type = match ? `image/${match[1]}` : `image`;
+
+  formData.append("file", {
+    uri,
+    name: filename,
+    type,
+  });
+
+  const token = await getToken();
+  const response = await fetch(`${GLOBAL_URL}/upload-image`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "multipart/form-data",
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error("Image upload failed");
+  }
+
+  const data = await response.json();
+  return data.url; // Assuming response is { "url": "https://..." }
+};
+
+
+const handleSend = async () => {
+  if (!newComment.trim()) {
+    Alert.alert("Error", "Comment text is required");
+    return;
+  }
+
+  let imageUrl = null;
+
+  try {
+    setSubmittingComment(true);
+
+    if (newImage) {
+      imageUrl = await uploadImage(newImage);
     }
 
-    try {
-      setSubmittingComment(true);
+    const tempId = uuidv4();
+    const tempComment = {
+      comment_id: tempId,
+      username: "currentUser",
+      text: newComment,
+      imageUri: newImage,
+      likes: 0,
+      liked: false,
+      replies: [],
+      created_at: new Date(),
+      isReplying: false,
+      replyText: "",
+      profile_picture_url: null
+    };
 
-      const tempComment = {
-        comment_id: uuidv4(),
-        username: "currentUser",
-        text: newComment,
-        imageUri: newImage,
-        likes: 0,
-        liked: false,
-        replies: [],
-        created_at: new Date(),
-        isReplying: false,
-        replyText: "",
-        profile_picture_url: null
-      };
+    setComments(prev => [...prev, tempComment]);
+    setCommentCount(c => c + 1);
+    setNewComment("");
+    setNewImage(null);
 
-      setComments(prev => [...prev, tempComment]);
-      setCommentCount(c => c + 1);
-      setNewComment("");
-      setNewImage(null);
+    const addedComment = await addComment(initialPost.id, newComment, imageUrl);
 
-      const addedComment = await addComment(initialPost.id, newComment);
+    setComments(prev =>
+      prev.map(c =>
+        c.comment_id === tempId
+          ? addedComment
+          : c
+      )
+    );
 
-      setComments(prev =>
-        prev.map(c =>
-          c.comment_id === tempComment.comment_id
-            ? addedComment
-            : c
-        )
-      );
-
-      if (onComment) {
-        onComment(addedComment.text);
-      }
-    } catch (error) {
-      console.error("Comment error:", error);
-      setComments(prev => prev.filter(c => c.comment_id !== tempComment.comment_id));
-      setCommentCount(c => c - 1);
-      Alert.alert("Error", error.message || "Failed to post comment");
-    } finally {
-      setSubmittingComment(false);
+    if (onComment) {
+      onComment(addedComment.text);
     }
-  };
+  } catch (error) {
+    console.error("Comment error:", error);
+    Alert.alert("Error", error.message || "Failed to post comment");
+  } finally {
+    setSubmittingComment(false);
+  }
+};
+
 
   const pickImage = async () => {
     try {
@@ -352,6 +389,7 @@ export default function DiscussionPage({ route }) {
               </Pressable>
             )}
           </View>
+          
 
           <Text className="text-white text-base leading-6 my-3">{initialPost.text}</Text>
           {initialPost.image_url && (
@@ -393,6 +431,15 @@ export default function DiscussionPage({ route }) {
           <View key={comment.comment_id} className="mb-4">
             <Text className="text-white font-semibold">@{comment.username}</Text>
             <Text className="text-gray-300">{comment.text}</Text>
+
+            {comment.image_url && (
+              <Image
+                source={{ uri: comment.image_url }}
+                className="w-full h-48 rounded-lg mt-2"
+                resizeMode="cover"
+              />
+            )}
+
             <Text className="text-gray-500 text-xs mt-1">{comment.created_at.toLocaleString()}</Text>
           </View>
         ))}
