@@ -1439,6 +1439,81 @@ async def upload_comment_image(
         )
 
 
+@app.delete('/forum/posts/{post_id}/comments/{comment_id}',
+          summary="Delete a comment",
+          description="Delete a comment if the requesting user is the comment author or post owner",
+          response_description="Success message")
+async def delete_comment(
+    post_id: str,
+    comment_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify token and get user UID
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        # Get the post document
+        post_ref = db.collection("forum_posts").document(post_id)
+        post_doc = post_ref.get()
+
+        # Check if post exists
+        if not post_doc.exists:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        post_data = post_doc.to_dict()
+        comments = post_data.get('comments', [])
+
+        # Find the comment to delete
+        comment_to_delete = None
+        comment_index = -1
+        
+        for i, comment in enumerate(comments):
+            if comment.get('comment_id') == comment_id:
+                comment_to_delete = comment
+                comment_index = i
+                break
+
+        if not comment_to_delete:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        # Check if user has permission (either comment author or post owner)
+        is_comment_author = comment_to_delete.get('user_id') == user_uid
+        is_post_owner = post_data.get('user_id') == user_uid
+
+        if not (is_comment_author or is_post_owner):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only delete your own comments or comments on your posts"
+            )
+
+        # Remove the comment from the array
+        updated_comments = [
+            comment for comment in comments 
+            if comment.get('comment_id') != comment_id
+        ]
+
+        # Update the post with the modified comments array
+        post_ref.update({
+            'comments': updated_comments
+        })
+
+        return {"message": "Comment deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting comment: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete comment"
+        )
+
+
+
 @app.post('/forum/posts/{post_id}/share',
           summary="Share a post",
           description="Increment the share count of a post",

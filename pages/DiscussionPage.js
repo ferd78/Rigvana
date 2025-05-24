@@ -61,7 +61,7 @@ export default function DiscussionPage({ route }) {
     })();
   }, []);
 
-    const handleDeletePost = async () => {
+  const handleDeletePost = async () => {
     Alert.alert("Confirm", "Are you sure you want to delete this post?", [
       {
         text: "Cancel",
@@ -86,6 +86,47 @@ export default function DiscussionPage({ route }) {
           } catch (err) {
             console.error("Delete error:", err);
             Alert.alert("Error", "Failed to delete post");
+          }
+        }
+      }
+    ]);
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    Alert.alert("Confirm", "Are you sure you want to delete this comment?", [
+      {
+        text: "Cancel",
+        style: "cancel"
+      },
+      {
+        text: "Delete",
+        onPress: async () => {
+          try {
+            setLoading(true);
+            const token = await getToken();
+            const res = await fetch(
+              `${GLOBAL_URL}/forum/posts/${initialPost.id}/comments/${commentId}`,
+              {
+                method: "DELETE",
+                headers: {
+                  Authorization: `Bearer ${token}`
+                }
+              }
+            );
+
+            if (!res.ok) throw new Error("Delete failed");
+
+            // Remove the comment from local state
+            setComments(prev => 
+              prev.filter(c => c.comment_id !== commentId)
+            );
+            setCommentCount(prev => prev - 1);
+            Alert.alert("Success", "Comment deleted successfully");
+          } catch (err) {
+            console.error("Delete error:", err);
+            Alert.alert("Error", "Failed to delete comment");
+          } finally {
+            setLoading(false);
           }
         }
       }
@@ -125,93 +166,92 @@ export default function DiscussionPage({ route }) {
     }
   };
 
-const uploadImage = async (uri) => {
-  const formData = new FormData();
-  const filename = uri.split('/').pop();
-  const match = /\.(\w+)$/.exec(filename || '');
-  const type = match ? `image/${match[1]}` : `image`;
+  const uploadImage = async (uri) => {
+    const formData = new FormData();
+    const filename = uri.split('/').pop();
+    const match = /\.(\w+)$/.exec(filename || '');
+    const type = match ? `image/${match[1]}` : `image`;
 
-  formData.append("file", {
-    uri,
-    name: filename,
-    type,
-  });
+    formData.append("file", {
+      uri,
+      name: filename,
+      type,
+    });
 
-  const token = await getToken();
-  const response = await fetch(`${GLOBAL_URL}/upload-image`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "multipart/form-data",
-    },
-    body: formData,
-  });
+    const token = await getToken();
+    const response = await fetch(`${GLOBAL_URL}/upload-image`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "multipart/form-data",
+      },
+      body: formData,
+    });
 
-  if (!response.ok) {
-    throw new Error("Image upload failed");
-  }
-
-  const data = await response.json();
-  return data.url; // Assuming response is { "url": "https://..." }
-};
-
-
-const handleSend = async () => {
-  if (!newComment.trim()) {
-    Alert.alert("Error", "Comment text is required");
-    return;
-  }
-
-  let imageUrl = null;
-
-  try {
-    setSubmittingComment(true);
-
-    if (newImage) {
-      imageUrl = await uploadImage(newImage);
+    if (!response.ok) {
+      throw new Error("Image upload failed");
     }
 
-    const tempId = uuidv4();
-    const tempComment = {
-      comment_id: tempId,
-      username: "currentUser",
-      text: newComment,
-      imageUri: newImage,
-      likes: 0,
-      liked: false,
-      replies: [],
-      created_at: new Date(),
-      isReplying: false,
-      replyText: "",
-      profile_picture_url: null
-    };
+    const data = await response.json();
+    return data.url; // Assuming response is { "url": "https://..." }
+  };
 
-    setComments(prev => [...prev, tempComment]);
-    setCommentCount(c => c + 1);
-    setNewComment("");
-    setNewImage(null);
-
-    const addedComment = await addComment(initialPost.id, newComment, imageUrl);
-
-    setComments(prev =>
-      prev.map(c =>
-        c.comment_id === tempId
-          ? addedComment
-          : c
-      )
-    );
-
-    if (onComment) {
-      onComment(addedComment.text);
+  const handleSend = async () => {
+    if (!newComment.trim()) {
+      Alert.alert("Error", "Comment text is required");
+      return;
     }
-  } catch (error) {
-    console.error("Comment error:", error);
-    Alert.alert("Error", error.message || "Failed to post comment");
-  } finally {
-    setSubmittingComment(false);
-  }
-};
 
+    let imageUrl = null;
+
+    try {
+      setSubmittingComment(true);
+
+      if (newImage) {
+        imageUrl = await uploadImage(newImage);
+      }
+
+      const tempId = uuidv4();
+      const tempComment = {
+        comment_id: tempId,
+        username: "currentUser",
+        text: newComment,
+        imageUri: newImage,
+        likes: 0,
+        liked: false,
+        replies: [],
+        created_at: new Date(),
+        isReplying: false,
+        replyText: "",
+        profile_picture_url: null,
+        user_id: userUid // Add user_id to the comment
+      };
+
+      setComments(prev => [...prev, tempComment]);
+      setCommentCount(c => c + 1);
+      setNewComment("");
+      setNewImage(null);
+
+      const addedComment = await addComment(initialPost.id, newComment, imageUrl);
+
+      setComments(prev =>
+        prev.map(c =>
+          c.comment_id === tempId
+            ? { ...addedComment, user_id: userUid } // Ensure user_id is preserved
+            : c
+        )
+      );
+
+      if (onComment) {
+        onComment(addedComment.text);
+      }
+    } catch (error) {
+      console.error("Comment error:", error);
+      Alert.alert("Error", error.message || "Failed to post comment");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   const pickImage = async () => {
     try {
@@ -314,7 +354,8 @@ const handleSend = async () => {
         text: parentComment.replyText,
         created_at: new Date(),
         parent_id: commentId,
-        profile_picture_url: null
+        profile_picture_url: null,
+        user_id: userUid // Add user_id to replies
       };
 
       setComments(prev =>
@@ -390,7 +431,6 @@ const handleSend = async () => {
             )}
           </View>
           
-
           <Text className="text-white text-base leading-6 my-3">{initialPost.text}</Text>
           {initialPost.image_url && (
             <Image
@@ -429,8 +469,20 @@ const handleSend = async () => {
 
         {comments.map(comment => (
           <View key={comment.comment_id} className="mb-4">
-            <Text className="text-white font-semibold">@{comment.username}</Text>
-            <Text className="text-gray-300">{comment.text}</Text>
+            <View className="flex-row justify-between items-start">
+              <View>
+                <Text className="text-white font-semibold">@{comment.username}</Text>
+                <Text className="text-gray-300">{comment.text}</Text>
+              </View>
+              {(userUid === comment.user_id || userUid === initialPost.user_id) && (
+                <Pressable 
+                  onPress={() => handleDeleteComment(comment.comment_id)}
+                  className="p-1"
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ff4c4c" />
+                </Pressable>
+              )}
+            </View>
 
             {comment.image_url && (
               <Image
