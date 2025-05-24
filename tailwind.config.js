@@ -20,7 +20,8 @@ module.exports = {
         'helvetica-bold': ['HelveticaBold']
       },
       width: {
-        "9/10" : "90%"
+        "9/10" : "90%",
+        "19/20" : "95%"
       }
     },
   },

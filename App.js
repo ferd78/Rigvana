@@ -14,6 +14,7 @@ import BottomTabs from "./navigation/BottomTabs";
 import Settings from "./pages/Settings";
 import ViewPage from "./pages/ViewPage";
 import NotificationsPage from "./pages/Notifications";
+import OtherProfile from "./pages/OtherProfile";
 
 const Stack = createNativeStackNavigator();
 
@@ -46,6 +47,7 @@ function App() {
           <Stack.Screen name="Settings" component={Settings} options={{ headerShown: false }} />
           <Stack.Screen name="ViewPage" component={ViewPage} options={{ headerShown: false }} />
           <Stack.Screen name="Notifications" component={NotificationsPage} options={{ headerShown: false }} />
+           <Stack.Screen name="OtherProfile" component={OtherProfile} options={{ headerShown: false }}/>
         </Stack.Navigator>
       </NavigationContainer>
   );

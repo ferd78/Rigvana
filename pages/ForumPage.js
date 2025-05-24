@@ -312,7 +312,7 @@ export default function ForumPage() {
           <View key={p.id} className="mb-6 bg-[#222] rounded-xl p-4">
             <View className="flex-row justify-between">
               <View className="flex-row items-center">
-                <Pressable onPress={() => navigation.navigate('Profile', { userId: p.user_id })}>
+                <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: p.user_id })}>
                   {p.profile_picture_url ?
                     <Image source={{ uri: p.profile_picture_url }} className="w-9 h-9 rounded-full mr-2" />
                     : <View className="w-9 h-9 rounded-full bg-gray-800 justify-center items-center mr-2"><Ionicons name="person-circle-outline" size={36} color="white" /></View>
@@ -393,13 +393,13 @@ export default function ForumPage() {
               ))}
             </ScrollView>
             
-            <View className="flex-row justify-between items-center">
+            <View className="flex-row justify-between">
               <Pressable onPress={loadBuilds} className="mt-3 items-center">
                 <Ionicons name="refresh-outline" size={28} color="white"/>
               </Pressable>
             
               <Pressable onPress={() => setBuildPickerVisible(false)} className="mt-3 items-center">
-                <Ionicons name="close-circle-outline" size={28} color="white" />
+                <Ionicons name="close-circle-outline" size={30} color="white" />
               </Pressable>
             </View>
 

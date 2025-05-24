@@ -7,6 +7,7 @@ import Home from "../pages/Home";
 import ProfilePage from "../pages/Profile";
 import ForumStack from "./ForumStack";
 import MapPageWrapper from "../pages/MapPageWrapper";
+import OtherProfile from "../pages/OtherProfile";
 
 const Tab = createBottomTabNavigator();
 
