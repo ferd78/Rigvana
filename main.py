@@ -1216,6 +1216,53 @@ async def get_other_profile(
 
 
 
+@app.get('/get-all-users',
+         summary="Get list of all users",
+         description="Returns basic information about all users including follower counts",
+         response_description="List of user profiles")
+async def get_all_users(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify authentication
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        current_user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    try:
+        users_ref = db.collection("users")
+        users_docs = users_ref.stream()
+        
+        users_list = []
+        
+        for user_doc in users_docs:
+            user_data = user_doc.to_dict()
+            user_profile = user_data.get("profile", {})
+            
+            # Calculate follower count
+            followers_query = db.collection("users").where("following", "array_contains", user_doc.id)
+            follower_count = len(list(followers_query.stream()))
+            
+            users_list.append({
+                "uid": user_doc.id,
+                "username": user_profile.get("username", "").strip() or "not set",
+                "profile_picture": user_profile.get("profile_picture", "").strip() or "not set",
+                "follower_count": follower_count,
+                "is_current_user": user_doc.id == current_user_uid  # Flag for current user
+            })
+        
+        return users_list
+        
+    except Exception as e:
+        print(f"Error fetching all users: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve user list"
+        )
+
+
+
 @app.post('/delete-profile-picture')
 async def delete_profile_picture(
     credentials: HTTPAuthorizationCredentials = Depends(security)
