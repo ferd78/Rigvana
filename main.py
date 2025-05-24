@@ -1032,7 +1032,9 @@ async def update_profile_picture(
         print(f"Error updating profile picture: {e}")
         raise HTTPException(status_code=500, detail="Failed to update profile picture")
 
-@app.get('/get-profile', summary="Fetch user profile")
+
+
+@app.get('/get-profile', summary="Fetch user profile with follow stats")
 async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         decoded_token = auth.verify_id_token(credentials.credentials)
@@ -1053,7 +1055,7 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
             user_data = user_doc.to_dict()
             user_profile = user_data.get("profile", {})
 
-            # Get actual values or assign 'not set' only if empty
+            # Get profile fields
             username = user_profile.get("username", "").strip()
             description = user_profile.get("description", "").strip()
             profile_picture = user_profile.get("profile_picture", "").strip()
@@ -1061,10 +1063,22 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
             profile["username"] = username if username else "not set"
             profile["description"] = description if description else "not set"
             profile["profile_picture"] = profile_picture if profile_picture else "not set"
+
+            # Get following count (people the user follows)
+            following = user_data.get("following", [])
+            profile["following_count"] = len(following)
+
+            # Get follower count (people who follow the user)
+            followers_query = db.collection("users").where("following", "array_contains", user_uid)
+            profile["follower_count"] = len(list(followers_query.stream()))
         else:
-            profile["username"] = "not set"
-            profile["description"] = "not set"
-            profile["profile_picture"] = "not set"
+            profile.update({
+                "username": "not set",
+                "description": "not set",
+                "profile_picture": "not set",
+                "following_count": 0,
+                "follower_count": 0
+            })
 
         return profile
         
@@ -1073,7 +1087,66 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
         raise HTTPException(status_code=500, detail="Failed to retrieve profile")
 
     
+@app.get('/get-other-profile', 
+         summary="Fetch another user's profile",
+         description="Retrieves profile information for a specified user including follow status and follower count",
+         response_description="The requested user's profile data with follow information")
+async def get_other_profile(
+    target_uid: str = Query(..., description="UID of the user whose profile to fetch"),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify the requesting user's token and get their UID
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        current_user_uid = decoded_token['uid']
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+    try:
+        # Get the target user's document
+        target_user_ref = db.collection("users").document(target_uid)
+        target_user_doc = target_user_ref.get()
+        
+        if not target_user_doc.exists:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+
+        # Get target user's profile data
+        target_user_data = target_user_doc.to_dict()
+        user_profile = target_user_data.get("profile", {})
+
+        # Get current user's following list to determine follow status
+        current_user_ref = db.collection("users").document(current_user_uid)
+        current_user_data = current_user_ref.get().to_dict() or {}
+        is_following = target_uid in current_user_data.get("following", [])
+
+        # Calculate follower count (users who follow the target user)
+        followers_query = db.collection("users").where("following", "array_contains", target_uid)
+        follower_count = len(list(followers_query.stream()))
+
+        profile = {
+            "uid": target_uid,
+            "username": user_profile.get("username", "").strip() or "not set",
+            "description": user_profile.get("description", "").strip() or "not set",
+            "profile_picture": user_profile.get("profile_picture", "").strip() or "not set",
+            "is_following": is_following,
+            "follower_count": follower_count,
+            "following_count": len(target_user_data.get("following", [])),
+            # Add any other public profile fields
+        }
+
+        return profile
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching other profile: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to retrieve profile"
+        )
 
 
 
