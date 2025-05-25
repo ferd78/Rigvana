@@ -51,7 +51,7 @@ function Register() {
                 <Pressable onPress={() => nav.navigate("Login")} className="absolute left-10">
                     <Ionicons name="arrow-back" color={"white"} size={28} />
                 </Pressable>
-                <Text className="text-helvetica-bold text-white text-4xl">
+                <Text className="text-helvetica-bold text-white text-3xl">
                     Create Account
                 </Text>
             </View>

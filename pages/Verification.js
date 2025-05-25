@@ -54,7 +54,7 @@ function Verification() {
                 <Pressable onPress={() => nav.navigate("ForgotPassword")} className="absolute left-10">
                     <Ionicons name="arrow-back" color={"white"} size={28} />
                 </Pressable>
-                <Text className="text-helvetica-bold text-white text-4xl">
+                <Text className="text-helvetica-bold text-white text-3xl">
                     Verification
                 </Text>
             </View>

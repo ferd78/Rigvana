@@ -57,13 +57,13 @@ export default function SearchPage() {
     <MainLayout>
       <View className="flex-1 bg-semiblack p-4">
         {/* Search Bar */}
-        <View className="flex-row items-center bg-gray-800 rounded-lg px-4 py-2 mb-4">
-          <Ionicons name="search-outline" size={20} color="#888" />
+        <View className="flex-row items-center bg-slate-800 rounded-xl px-4 py-2 mb-4">
+          <Ionicons name="search-outline" size={20} color="gray" />
           <TextInput
             value={query}
             onChangeText={setQuery}
             placeholder="Search by username…"
-            placeholderTextColor="#888"
+            placeholderTextColor="gray"
             className="flex-1 text-white ml-2"
           />
           {query !== "" && (
@@ -80,7 +80,7 @@ export default function SearchPage() {
             {filtered.map((u) => (
               <Pressable
                 key={u.uid}
-                className="flex-row items-center bg-gray-800 p-3 rounded-xl mb-3"
+                className="flex-row items-center bg-slate-800 p-3 rounded-xl mb-3"
                 onPress={() => nav.navigate("OtherProfile", { userId: u.uid })}
               >
                 {u.profile_picture !== "not set" ? (

@@ -270,7 +270,7 @@ export default function ForumPage() {
               onChangeText={setNewText}
               multiline
             />
-            <View className="flex-row mt-2">
+            <View className="flex-row">
               <Pressable onPress={pickImage} className="mr-4">
                 <Ionicons name="camera-outline" size={24} color="#888" />
               </Pressable>
@@ -303,7 +303,7 @@ export default function ForumPage() {
         )}
 
         {posts.map(p => (
-          <View key={p.id} className="mb-6 bg-[#222] rounded-xl p-4">
+          <View key={p.id} className="mb-6 bg-[#222] rounded-xl p-4 mt-3">
             <View className="flex-row justify-between">
               <View className="flex-row items-center">
                 <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: p.user_id })}>
