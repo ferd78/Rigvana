@@ -1,6 +1,6 @@
 import datetime as dt
 import threading  
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query # type: ignore
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query, BackgroundTasks, Depends, APIRouter# type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
 from firebase_admin import credentials, auth, firestore, storage# type: ignore
@@ -148,18 +148,19 @@ class ForumPostCreate(BaseModel):
 
 class ForumPostResponse(BaseModel):
     id: str
+    user_id: str
     username: str
+    profile_picture: Optional[str]
     text: str
     image_url: Optional[str]
     audio_url: Optional[str]
     location: Optional[Dict[str, float]]
     likes: int
-    comments: List[Dict]
+    liked_by: List
+    comments: List
     shares: int
-    created_at: datetime
-    build_id: Optional[str]
+    created_at: str  
     build_data: Optional[Dict]
-    profile_picture_url: Optional[str] = None 
 
 class CommentCreate(BaseModel):
     text: str
@@ -846,7 +847,11 @@ async def get_certain_build_details(
                 detail="Build not found"
             )
             
-        build_data = build_doc.to_dict()
+        if build_doc.exists:
+            build_data = build_doc.to_dict()
+            # Remove any non-serializable fields
+            build_data = {k: v for k, v in build_data.items() 
+                        if not k.startswith('_') and not isinstance(v, (threading.Lock, type))}
         
         # Prepare response with basic build info
         response = {
@@ -1363,13 +1368,16 @@ async def delete_profile_picture(
 @app.post('/forum/posts',
           summary="Create a new forum post",
           description="Create a new post in the forum with user profile information",
-          response_description="The created post with user profile data")
+          response_description="The created post with user profile data",
+          response_model=ForumPostResponse)
 def create_forum_post(
     post_data: ForumPostCreate,
+    background_tasks: BackgroundTasks,
     credentials: HTTPAuthorizationCredentials = Depends(security)
-):
+    
+) -> ForumPostResponse:
     try:
-        # Authentication
+        # Authenticate user
         decoded_token = auth.verify_id_token(credentials.credentials)
         user_uid = decoded_token['uid']
         user_email = decoded_token.get('email', '')
@@ -1377,64 +1385,87 @@ def create_forum_post(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     try:
-        # Validation
+        # Validate post content
         if not post_data.text.strip():
             raise HTTPException(status_code=400, detail="Text is required for a post")
 
-        # Get user profile data
+        # Fetch user profile
         user_doc = db.collection("users").document(user_uid).get()
-        username = user_email.split("@")[0]  # Default to email prefix
+        username = user_email.split("@")[0]
         profile_pic = None
-        
+
         if user_doc.exists:
             user_data = user_doc.to_dict()
             profile = user_data.get("profile", {})
             username = profile.get("username", username)
             profile_pic = profile.get("profile_picture")
 
-        # Create post document
+        # Build post dictionary
         post_ref = db.collection("forum_posts").document()
         post_dict = {
             "user_id": user_uid,
             "username": username,
             "profile_picture": profile_pic,
             "text": post_data.text,
-            "image_url": post_data.image_url if post_data.image_url else None,
-            "audio_url": post_data.audio_url if post_data.audio_url else None,
-            "location": post_data.location if post_data.location else None,
+            "image_url": post_data.image_url or None,
+            "audio_url": post_data.audio_url or None,
+            "location": post_data.location or None,
             "likes": 0,
             "liked_by": [],
             "comments": [],
             "shares": 0,
-            "created_at": datetime.now(),
+            "created_at": datetime.utcnow(),
         }
 
         if post_data.build_id:
             post_dict["build_id"] = post_data.build_id
 
+        # Store post in Firestore
         post_ref.set(post_dict)
         post_id = post_ref.id
 
-        # Get build data if needed
+        # Optional: Attach build data
         build_data = None
         if post_data.build_id:
             build_doc = db.collection("users").document(user_uid)\
-                         .collection("builds").document(post_data.build_id).get()
+                          .collection("builds").document(post_data.build_id).get()
             if build_doc.exists:
                 build_data = build_doc.to_dict()
 
-        # Notify followers in background
-        threading.Thread(
-            target=notify_followers_on_new_post,
-            args=(user_uid, post_id, "thread")
-        ).start()
+                # Remove private and unserializable fields
+                lock_type = type(threading.Lock())
+                build_data = {
+                    k: v for k, v in build_data.items()
+                    if not k.startswith('_') and not isinstance(v, lock_type)
+                }
 
-        return {
-            **post_dict,
-            "id": post_id,
-            "build_data": build_data,
-            "created_at": post_dict["created_at"].isoformat()
-        }
+                # Convert document references and other nested fields
+                build_data = convert_document_references(build_data)
+
+                # Convert any remaining non-serializable objects to strings
+                for k, v in build_data.items():
+                    if not isinstance(v, (str, int, float, bool, list, dict, type(None))):
+                        build_data[k] = str(v)
+
+        # Notify followers in background
+        background_tasks.add_task(notify_followers_on_new_post, user_uid, post_id, "thread")
+
+        return ForumPostResponse(
+            id=post_id,
+            user_id=user_uid,
+            username=username,
+            profile_picture=profile_pic,
+            text=post_data.text,
+            image_url=post_data.image_url,
+            audio_url=post_data.audio_url,
+            location=post_data.location,
+            likes=0,
+            liked_by=[],
+            comments=[],
+            shares=0,
+            created_at=post_dict["created_at"].isoformat(),
+            build_data=build_data
+        )
 
     except HTTPException:
         raise
@@ -1733,7 +1764,42 @@ async def delete_forum_post(
         )
 
 
+@app.post('/upload-forum-image')
+async def upload_forum_image(
+    file: UploadFile = File(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify token
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
 
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(400, detail="Only image files are allowed")
+
+        # Generate unique filename with forum_post_images folder
+        file_ext = file.filename.split('.')[-1]
+        filename = f"forum_post_images/{user_uid}/{uuid.uuid4()}.{file_ext}"
+
+        # Upload to Firebase Storage
+        bucket = storage.bucket()
+        blob = bucket.blob(filename)
+        
+        # Upload the file
+        contents = await file.read()
+        blob.upload_from_string(contents, content_type=file.content_type)
+        
+        # Make the file publicly readable
+        blob.make_public()
+        
+        return {"url": blob.public_url}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload forum image: {str(e)}"
+        )
 
 
 @app.post('/upload-comment-image')

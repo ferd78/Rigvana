@@ -66,7 +66,7 @@ export default function ForumPage() {
         ...p,
         created_at: new Date(p.created_at),
         commentsData: p.comments?.map(c => ({ ...c, created_at: new Date(c.created_at) })) || [],
-        profile_picture_url: p.profile_picture || null, // Changed from p.profile_picture_url to p.profile_picture
+        profile_picture_url: p.profile_picture || null,
       }));
       setPosts(processed);
     } catch {
@@ -122,18 +122,32 @@ export default function ForumPage() {
     if (!res.canceled && res.assets?.length) setNewImage(res.assets[0].uri);
   };
 
-  async function uploadFile(uri, type) {
+  async function uploadForumImage(uri) {
     const token = await getToken();
     const name = uri.split('/').pop();
     const form = new FormData();
-    form.append('file', { uri, name, type: type === 'image' ? 'image/jpeg' : 'audio/m4a' });
-    const res = await fetch(`${GLOBAL_URL}/upload-profile-picture`, {
+    form.append('file', { 
+      uri, 
+      name, 
+      type: 'image/jpeg' 
+    });
+    
+    const res = await fetch(`${GLOBAL_URL}/upload-forum-image`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      headers: { 
+        Authorization: `Bearer ${token}`, 
+        'Content-Type': 'multipart/form-data' 
+      },
       body: form,
     });
-    if (!res.ok) throw new Error();
-    return (await res.json()).url;
+    
+    if (!res.ok) {
+      const error = await res.text();
+      throw new Error(error || 'Failed to upload image');
+    }
+    
+    const data = await res.json();
+    return data.url;
   }
 
   const handleResetPostInputs = async () => {
@@ -153,7 +167,7 @@ export default function ForumPage() {
     try {
       const token = await getToken();
 
-      const imgUrl = newImage ? await uploadFile(newImage, "image") : null;
+      const imgUrl = newImage ? await uploadForumImage(newImage) : null;
 
       const payload = {
         text: newText,
@@ -183,7 +197,7 @@ export default function ForumPage() {
           ...np,
           liked: false,
           commentsData: [],
-          profile_picture_url: np.profile_picture || null, // Changed from np.profile_picture_url to np.profile_picture
+          profile_picture_url: np.profile_picture || null,
           created_at: new Date(),
         },
         ...prev,
