@@ -31,12 +31,15 @@ function EditProfile() {
       console.log("Profile data:", data);
       setProfile(data);
 
-      // Optionally fetch followers from separate endpoint
-      const followRes = await fetch(`${GLOBAL_URL}/get-followers-count`, {
-        headers: {
-          Authorization: `Bearer ${token}`
+      
+      const followRes = await fetch(
+        `${GLOBAL_URL}/get-followers-count?uid=${data.uid}`, 
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
         }
-      });
+      );
 
       if (followRes.ok) {
         const followData = await followRes.json();

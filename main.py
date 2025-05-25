@@ -172,6 +172,16 @@ class PostBuildWithTweet(BaseModel):
     audio_url: Optional[str] = None
     location: Optional[Dict[str, float]] = None
 
+class NotificationResponse(BaseModel):
+    id: str
+    recipient_uid: str
+    sender_uid: str
+    type: str
+    object_id: str
+    message: str
+    is_read: bool
+    created_at: datetime
+
 #################################################################################################################
 
 def send_email(to_email: str, content: str):
@@ -236,41 +246,46 @@ def convert_document_references(obj):
     
 
 
-def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type: str):
+async def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type: str):
     try:
-        # Get the poster's username
-        poster_doc = db.collection("users").document(poster_uid).get()
+        # Get the poster's username and profile data
+        poster_doc = await db.collection("users").document(poster_uid).get()
         poster_data = poster_doc.to_dict() or {}
-        poster_name = poster_data.get("username", "Someone")
+        poster_profile = poster_data.get("profile", {})
+        poster_name = poster_profile.get("username", "Someone")
+        poster_pic = poster_profile.get("profile_picture_url")
 
-        # Get all users and find those who follow the poster
-        all_users = db.collection("users").stream()
-        followers = [
-            user for user in all_users
-            if poster_uid in (user.to_dict().get("following") or [])
-        ]
+        # Get all users who follow the poster (more efficient query)
+        followers_query = db.collection("users").where("following", "array_contains", poster_uid)
+        followers = await followers_query.get()
 
-        # Prepare notifications in a batch
+        # Prepare batch operation
         batch = db.batch()
-
+        
         for follower in followers:
             follower_uid = follower.id
             notification_ref = db.collection("notifications").document()
-
+            
             notification_data = {
                 "recipient_uid": follower_uid,
                 "sender_uid": poster_uid,
-                "type": f"new_{post_type}",  # e.g., new_tweet or new_thread
+                "sender_name": poster_name,
+                "sender_image": poster_pic,
+                "type": f"new_{post_type}",
                 "object_id": post_id,
                 "message": f"{poster_name} posted a new {post_type}",
                 "is_read": False,
-                "created_at": dt.datetime.utcnow()
+                "created_at": firestore.SERVER_TIMESTAMP,  # Let Firestore handle timestamp
+                "metadata": {
+                    "post_type": post_type,
+                    "preview_content": poster_data.get("text", "")[:100] + "..." if poster_data.get("text") else ""
+                }
             }
-
+            
             batch.set(notification_ref, notification_data)
 
-        batch.commit()
-        print(f"Notifications sent to {len(followers)} followers")
+        await batch.commit()
+        print(f"Successfully notified {len(followers)} followers")
 
     except Exception as e:
         print(f"Error notifying followers: {str(e)}")
@@ -1468,71 +1483,90 @@ async def toggle_post_like(
 async def add_comment(
     post_id: str,
     comment_data: CommentCreate,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    request: Request = None
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     try:
-        # Verify user token
+        # Verify user
         decoded_token = auth.verify_id_token(credentials.credentials)
         user_uid = decoded_token['uid']
-        user_email = decoded_token.get('email', '')
-
-        # Validate comment has either text or image
+        
+        # Validate comment content
         if not comment_data.text.strip() and not comment_data.image_url:
             raise HTTPException(
                 status_code=400,
                 detail="Comment must have either text or image"
             )
 
-        # Get post reference
+        # Get post and author info
         post_ref = db.collection("forum_posts").document(post_id)
-        post_snapshot = post_ref.get()
+        post_doc = post_ref.get()
         
-        if not post_snapshot.exists:
-            raise HTTPException(
-                status_code=404,
-                detail="Post not found"
-            )
+        if not post_doc.exists:
+            raise HTTPException(status_code=404, detail="Post not found")
+            
+        post_data = post_doc.to_dict()
+        post_author_uid = post_data.get("user_id")
 
-        # Get username
-        username = user_email.split("@")[0]
-        profile_picture_url = None
+        # Get commenter info
         user_doc = db.collection("users").document(user_uid).get()
-        if user_doc.exists:
-            profile = user_doc.to_dict().get("profile", {})
-            username = profile.get("username", username)
-            profile_picture_url = profile.get("profile_picture_url")
+        user_data = user_doc.to_dict() or {}
+        user_profile = user_data.get("profile", {})
+        username = user_profile.get("username", user_data.get("email", "").split("@")[0])
+        profile_pic = user_profile.get("profile_picture_url")
 
-        # Create comment object
+        # Create comment with client timestamp
+        comment_id = str(uuid.uuid4())
         comment = {
             "user_id": user_uid,
             "username": username,
             "text": comment_data.text.strip(),
             "image_url": comment_data.image_url,
-            "created_at": datetime.now(),
-            "comment_id": str(uuid.uuid4()),
-            "profile_picture_url": profile_picture_url  # Add profile picture
+            "comment_id": comment_id,
+            "profile_picture_url": profile_pic,
+            "created_at": datetime.now().isoformat()
         }
 
-        # Add to Firestore
+        # Add comment to array in the post document
         post_ref.update({
             "comments": firestore.ArrayUnion([comment])
         })
 
-        # Convert datetime to ISO format for JSON serialization
-        comment_serialized = {
+        # Add comment to a subcollection with server timestamp
+        comment_ref = post_ref.collection("comments").document(comment_id)
+        comment_ref.set({
             **comment,
-            "created_at": comment["created_at"].isoformat()
-        }
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
 
-        return comment_serialized
+        # Send notification to post author
+        if post_author_uid and post_author_uid != user_uid:
+            notification_ref = db.collection("notifications").document()
+            notification_data = {
+                "recipient_uid": post_author_uid,
+                "sender_uid": user_uid,
+                "sender_name": username,
+                "sender_image": profile_pic,
+                "type": "new_comment",
+                "object_id": post_id,
+                "message": f"{username} commented on your post",
+                "is_read": False,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "metadata": {
+                    "comment_preview": comment_data.text[:100] + "..." if comment_data.text else "",
+                    "post_preview": post_data.get("text", "")[:100] + "..." if post_data.get("text") else ""
+                }
+            }
+            notification_ref.set(notification_data)
+
+        return comment
 
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error adding comment: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while adding comment"
+            detail="Failed to add comment"
         )
 
 
@@ -1734,42 +1768,42 @@ async def share_post(
         )
     
 
-@app.post('/follow-user',
-          summary="Follow or unfollow a user",
-          description="Toggle follow status for another user. If already following, will unfollow.",
-          response_description="Current follow status")
+@app.post('/follow-user')
 async def follow_user(
     follow_data: FollowUserRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     try:
-        # Verify the current user
+        # Verify user
         decoded_token = auth.verify_id_token(credentials.credentials)
         current_user_uid = decoded_token['uid']
         target_user_uid = follow_data.target_uid
 
-        # Can't follow yourself
+        # Validate request
         if current_user_uid == target_user_uid:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot follow yourself"
-            )
+            raise HTTPException(status_code=400, detail="Cannot follow yourself")
 
         # Check if target user exists
         target_user_ref = db.collection("users").document(target_user_uid)
-        if not target_user_ref.get().exists:
-            raise HTTPException(
-                status_code=404,
-                detail="Target user not found"
-            )
+        target_user_doc = await target_user_ref.get()
+        if not target_user_doc.exists:
+            raise HTTPException(status_code=404, detail="User not found")
 
-        # Get current user's following list
+        # Get current user data
         current_user_ref = db.collection("users").document(current_user_uid)
-        current_user_data = current_user_ref.get().to_dict() or {}
-        following = current_user_data.get("following", [])
+        current_user_doc = await current_user_ref.get()
+        current_user_data = current_user_doc.to_dict() or {}
+        
+        # Get profile data for notification
+        current_profile = current_user_data.get("profile", {})
+        current_username = current_profile.get("username", "Someone")
+        current_profile_pic = current_profile.get("profile_picture_url")
 
         # Toggle follow status
-        if target_user_uid in following:
+        following = current_user_data.get("following", [])
+        is_following = target_user_uid in following
+        
+        if is_following:
             # Unfollow
             following.remove(target_user_uid)
             action = "unfollowed"
@@ -1777,25 +1811,41 @@ async def follow_user(
             # Follow
             following.append(target_user_uid)
             action = "followed"
+            
+            # Create notification for the target user
+            notification_ref = db.collection("notifications").document()
+            notification_data = {
+                "recipient_uid": target_user_uid,
+                "sender_uid": current_user_uid,
+                "sender_name": current_username,
+                "sender_image": current_profile_pic,
+                "type": "new_follower",
+                "object_id": current_user_uid,
+                "message": f"{current_username} started following you",
+                "is_read": False,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "metadata": {
+                    "follower_count": len(following) + 1  # +1 because we haven't updated yet
+                }
+            }
+            await notification_ref.set(notification_data)
 
-        # Update in Firestore
-        current_user_ref.set({
-            "following": following
-        }, merge=True)
+        # Update following list
+        await current_user_ref.update({"following": following})
 
         return {
             "action": action,
-            "currently_following": target_user_uid in following,
+            "currently_following": not is_following,
             "following_count": len(following)
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in follow-user: {str(e)}")
+        print(f"Error in follow operation: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to update follow status"
+            detail="Failed to process follow request"
         )
     
 
@@ -1873,6 +1923,24 @@ async def get_following_posts(
             status_code=500,
             detail="Failed to retrieve posts from followed users"
         )
+
+
+@app.get("/get-followers-count")
+async def get_followers_count(uid: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        # Verify token
+        auth.verify_id_token(credentials.credentials)
+
+        # Query followers
+        query_ref = db.collection("users").where("following", "array_contains", uid)
+        followers = query_ref.get()  
+
+        return {"follower_count": len(followers)}
+
+    except Exception as e:
+        print("Error fetching follower count:", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Failed to fetch follower count")
+
 
 @app.get('/user-posts/{user_uid}',
          summary="Get all posts by a specific user",
@@ -2125,7 +2193,89 @@ async def get_store_inventory(
             detail="Failed to retrieve inventory"
         )
     
+####################################### NOTIFICATIONS ENDPOINTS ################################
 
+@app.get('/notifications',
+         response_model=List[NotificationResponse],
+         summary="Get user notifications",
+         description="Retrieve all notifications for the current user",
+         response_description="List of notifications")
+async def get_user_notifications(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    limit: int = Query(20, description="Number of notifications to return"),
+    unread_only: bool = Query(False, description="Return only unread notifications")
+):
+    try:
+        # Verify user
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        
+        # Query notifications
+        notifications_ref = db.collection("notifications")
+        query = notifications_ref.where("recipient_uid", "==", user_uid)
+        
+        if unread_only:
+            query = query.where("is_read", "==", False)
+            
+        notifications = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit).stream()
+        
+        notification_list = []
+        for notif in notifications:
+            notif_data = notif.to_dict()
+            notif_data['id'] = notif.id
+            # Convert Firestore timestamp to datetime
+            if 'created_at' in notif_data:
+                notif_data['created_at'] = notif_data['created_at'].isoformat()
+            notification_list.append(notif_data)
+        
+        return notification_list
+
+    except Exception as e:
+        print(f"Error fetching notifications: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve notifications"
+        )
+
+@app.post('/notifications/{notification_id}/read',
+          summary="Mark notification as read",
+          description="Mark a specific notification as read",
+          response_description="Confirmation of update")
+async def mark_notification_as_read(
+    notification_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    try:
+        # Verify user
+        decoded_token = auth.verify_id_token(credentials.credentials)
+        user_uid = decoded_token['uid']
+        
+        # Get the notification
+        notif_ref = db.collection("notifications").document(notification_id)
+        notif_doc = notif_ref.get()
+        
+        if not notif_doc.exists:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        notif_data = notif_doc.to_dict()
+        
+        # Verify the notification belongs to the user
+        if notif_data.get('recipient_uid') != user_uid:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this notification")
+        
+        # Update the notification
+        notif_ref.update({"is_read": True})
+        
+        return {"status": "success", "message": "Notification marked as read"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error marking notification as read: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update notification"
+        )
 
 
 #################################################################################################################
