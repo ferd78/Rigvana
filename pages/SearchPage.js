@@ -53,7 +53,7 @@ export default function SearchPage() {
   useEffect(() => {
     const q = query.trim().toLowerCase();
     if (!q) {
-      setFiltered([]);
+      setFiltered(users);
     } else {
       setFiltered(
         users.filter((u) =>
@@ -67,7 +67,10 @@ export default function SearchPage() {
     if (user.uid === currentUserId) {
       nav.navigate("Profile");
     } else {
-      nav.navigate("OtherProfile", { userId: user.uid });
+      nav.navigate("Forum", {
+        screen: "OtherProfile",
+        params: { userId: user.uid },
+      })
     }
   };
 
