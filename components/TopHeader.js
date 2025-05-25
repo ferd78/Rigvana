@@ -10,14 +10,14 @@ function TopHeader(){
     const showUnderline = route.name !== "Forum";
     return (
         <>
-        <View className="pt-8 px-4 flex-row items-center justify-between">
+        <View className="pt-10 px-4 flex-row items-center justify-between">
                 <Text className="text-ymblue font-jura-bold text-3xl tracking-widest">RIGVANA</Text>
-                <View className="flex-row gap-3 items-center">
+                <View className="flex-row gap-5 items-center">
                    <Pressable onPress={() => nav.navigate("Notifications")}>
                      <Ionicons name="notifications-outline" color="white" size={28} />
                    </Pressable>
                     <Pressable onPress={() => nav.navigate("Settings")}>
-                        <Ionicons name="settings-outline" color={"white"} size={32}/>
+                        <Ionicons name="settings-outline" color={"white"} size={28}/>
                     </Pressable>
                 </View>
             </View>

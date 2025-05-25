@@ -54,7 +54,7 @@ export default function ProfileModal({ visible, onClose, profile, setProfile }) 
       <View className="flex-1 justify-center items-center bg-black/60">
         <View className="w-11/12 p-4 bg-zinc-700 rounded-xl">
           <Pressable onPress={onClose}>
-            <Ionicons name="close-outline" size={24} color={"white"}/>
+            <Ionicons name="close-outline" size={24} color={"black"}/>
           </Pressable>
 
           <Text className="text-lg font-bold mb-2 text-white text-helvetica font-bold">
@@ -65,27 +65,27 @@ export default function ProfileModal({ visible, onClose, profile, setProfile }) 
             <Text className="text-red-500 mb-2">{error}</Text>
           )}
 
-          <Text className="text-white text-helvetica">
+          <Text className="text-white font-semibold text-helvetica">
             Username:
           </Text>
           <TextInput
             placeholder="Profile Name"
-            placeholderTextColor={"white"}
+            placeholderTextColor={"gray"}
             value={name}
             onChangeText={setName}
-            className="border border-white rounded px-3 py-2 mb-3 text-white"
+            className="bg-zinc-800 rounded-md px-3 py-2 mb-3 mt-1 text-white"
           />
 
-          <Text className="text-white text-helvetica">
+          <Text className="text-white font-semibold text-helvetica">
             Bio:
           </Text>
           <TextInput
             placeholder="Bio"
-            placeholderTextColor={"white"}
+            placeholderTextColor={"gray"}
             value={description}
             onChangeText={setDescription}
             multiline
-            className="border border-white rounded px-3 py-2 h-24 text-start mb-3 text-white"
+            className="bg-zinc-800 rounded-md px-3 py-2 h-24 text-start mb-3 text-white"
           />
 
           <View className="w-full items-center justify-center bg-ymblue h-10 rounded-xl">

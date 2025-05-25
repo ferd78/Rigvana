@@ -144,9 +144,16 @@ export default function NotificationsPage() {
           />
         }
       >
-        <Text className="text-white text-lg font-helvetica-bold mb-4">
-          Notifications
-        </Text>
+        <View className="flex-row gap-2">
+          <Pressable onPress={() => navigation.navigate("MainTabs", { screen: "Forum" })}>
+            <Ionicons name="arrow-back-outline" color={"white"} size={24}/>
+          </Pressable>
+          
+          <Text className="text-white text-lg font-helvetica-bold mb-4 mt-0.5">
+            Notifications
+          </Text>
+        </View>
+        
 
         {notifications.length === 0 && !loading && (
           <View className="p-4 bg-neutral-800 rounded-lg">
@@ -174,7 +181,7 @@ export default function NotificationsPage() {
               )}
             </View>
 
-            <Text className="text-gray-400 font-helvetica text-sm leading-tight">
+            <Text className="text-gray-400 font-helvetica text-sm">
               {n.message}
             </Text>
 
