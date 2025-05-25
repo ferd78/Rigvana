@@ -23,6 +23,7 @@ export default function ForumPage() {
   const navigation = useNavigation();
   const route = useRoute();
   const repost = route.params?.repost;
+  const [userUid, setUserUid] = useState(null);
 
   const [selectedTab, setSelectedTab] = useState("ForYou");
   const [posts, setPosts] = useState([]);
@@ -50,6 +51,14 @@ export default function ForumPage() {
   useEffect(() => {
     (async () => {
       await ImagePicker.requestMediaLibraryPermissionsAsync();
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const token = await getToken();
+      const decoded = JSON.parse(atob(token.split('.')[1]));
+      setUserUid(decoded.user_id);
     })();
   }, []);
 
@@ -320,7 +329,15 @@ export default function ForumPage() {
           <View key={p.id} className="mb-6 bg-[#222] rounded-xl p-4 mt-3">
             <View className="flex-row justify-between">
               <View className="flex-row items-center">
-                <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: p.user_id })}>
+                <Pressable 
+                  onPress={() => {
+                    if (p.user_id === userUid) {
+                      navigation.navigate('Profile');
+                    } else {
+                      navigation.navigate('OtherProfile', { userId: p.user_id });
+                    }
+                  }}
+                >
                   {p.profile_picture_url ? (
                     <Image 
                       source={{ uri: p.profile_picture_url }} 

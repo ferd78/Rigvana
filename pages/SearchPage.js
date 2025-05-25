@@ -21,12 +21,22 @@ export default function SearchPage() {
   const [users, setUsers] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const token = await getToken();
+        
+        // Fetch current user's profile to get their ID
+        const currentUserRes = await fetch(`${GLOBAL_URL}/get-profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const currentUserData = await currentUserRes.json();
+        setCurrentUserId(currentUserData.uid);
+        
+        // Fetch all users
         const res = await fetch(`${GLOBAL_URL}/get-all-users`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -52,6 +62,14 @@ export default function SearchPage() {
       );
     }
   }, [query, users]);
+
+  const handleUserPress = (user) => {
+    if (user.uid === currentUserId) {
+      nav.navigate("Profile");
+    } else {
+      nav.navigate("OtherProfile", { userId: user.uid });
+    }
+  };
 
   return (
     <MainLayout>
@@ -81,7 +99,7 @@ export default function SearchPage() {
               <Pressable
                 key={u.uid}
                 className="flex-row items-center bg-slate-800 p-3 rounded-xl mb-3"
-                onPress={() => nav.navigate("OtherProfile", { userId: u.uid })}
+                onPress={() => handleUserPress(u)}
               >
                 {u.profile_picture !== "not set" ? (
                   <Image
@@ -104,7 +122,7 @@ export default function SearchPage() {
 
             {query.trim() !== "" && filtered.length === 0 && (
               <Text className="text-gray-400 text-center mt-8">
-                No users found for “{query}”
+                No users found for "{query}"
               </Text>
             )}
           </ScrollView>
