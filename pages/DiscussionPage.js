@@ -40,7 +40,7 @@ export default function DiscussionPage({ route }) {
       isReplying: false,
       replyText: "",
       created_at: new Date(c.created_at),
-      profile_picture_url: c.profile_picture_url || null // Ensure profile picture is properly initialized
+      profile_picture_url: c.profile_picture_url || null
     }))
   );
   const [commentCount, setCommentCount] = useState(comments.length);
@@ -159,7 +159,7 @@ export default function DiscussionPage({ route }) {
         replyText: "",
         liked: false,
         likes: 0,
-        profile_picture_url: json.profile_picture_url || null // Ensure profile picture is included
+        profile_picture_url: json.profile_picture_url || null
       };
     } catch (error) {
       console.error('Comment error:', error.message);
@@ -416,7 +416,15 @@ export default function DiscussionPage({ route }) {
         <View className="mb-6 pb-4 border-b border-gray-800">
           <View className="flex-row items-center justify-between mb-2">
             <View className="flex-row items-center">
-              <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: initialPost.user_id })}>
+              <Pressable 
+                onPress={() => {
+                  if (initialPost.user_id === userUid) {
+                    navigation.navigate('Profile');
+                  } else {
+                    navigation.navigate('OtherProfile', { userId: initialPost.user_id });
+                  }
+                }}
+              >
                 {initialPost.profile_picture_url ? (
                   <Image 
                     source={{ uri: initialPost.profile_picture_url }}
@@ -480,7 +488,15 @@ export default function DiscussionPage({ route }) {
         {comments.map(comment => (
           <View key={comment.comment_id} className="mb-4">
             <View className="flex-row">
-              <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: comment.user_id })}>
+              <Pressable 
+                onPress={() => {
+                  if (comment.user_id === userUid) {
+                    navigation.navigate('Profile');
+                  } else {
+                    navigation.navigate('OtherProfile', { userId: comment.user_id });
+                  }
+                }}
+              >
                 {comment.profile_picture_url ? (
                   <Image 
                     source={{ uri: comment.profile_picture_url }}
