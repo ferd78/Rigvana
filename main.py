@@ -1191,7 +1191,9 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
             description = user_profile.get("description", "").strip()
             profile_picture = user_profile.get("profile_picture", "").strip()
 
-            profile["username"] = username if username else "not set"
+            # Use email prefix as default username if not set
+            email_prefix = user_email.split('@')[0] if user_email else "user"
+            profile["username"] = username if username else email_prefix
             profile["description"] = description if description else "not set"
             profile["profile_picture"] = profile_picture if profile_picture else "not set"
 
@@ -1203,8 +1205,9 @@ async def get_profile(credentials: HTTPAuthorizationCredentials = Depends(securi
             followers_query = db.collection("users").where("following", "array_contains", user_uid)
             profile["follower_count"] = len(list(followers_query.stream()))
         else:
+            email_prefix = user_email.split('@')[0] if user_email else "user"
             profile.update({
-                "username": "not set",
+                "username": email_prefix,
                 "description": "not set",
                 "profile_picture": "not set",
                 "following_count": 0,
