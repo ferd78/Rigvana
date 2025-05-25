@@ -1,4 +1,5 @@
-import datetime as dt  
+import datetime as dt
+import threading  
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Query # type: ignore
 import uvicorn # type: ignore
 import firebase_admin # type: ignore
@@ -26,6 +27,8 @@ from fastapi.encoders import jsonable_encoder
 import logging
 import requests
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.api_core.exceptions import GoogleAPICallError
+
 
 
 # For firebase configs
@@ -246,28 +249,32 @@ def convert_document_references(obj):
     
 
 
-async def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type: str):
+def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type: str):
     try:
-        # Get the poster's username and profile data
-        poster_doc = await db.collection("users").document(poster_uid).get()
-        poster_data = poster_doc.to_dict() or {}
+        # Get poster info
+        poster_doc = db.collection("users").document(poster_uid).get()
+        if not poster_doc.exists:
+            return
+
+        poster_data = poster_doc.to_dict()
         poster_profile = poster_data.get("profile", {})
         poster_name = poster_profile.get("username", "Someone")
-        poster_pic = poster_profile.get("profile_picture_url")
+        poster_pic = poster_profile.get("profile_picture_url", "")
 
-        # Get all users who follow the poster (more efficient query)
-        followers_query = db.collection("users").where("following", "array_contains", poster_uid)
-        followers = await followers_query.get()
+        # Get followers
+        followers = db.collection("users")\
+                     .where("following", "array_contains", poster_uid)\
+                     .stream()
 
-        # Prepare batch operation
+        # Batch notifications
         batch = db.batch()
-        
+        notification_count = 0
+
         for follower in followers:
-            follower_uid = follower.id
             notification_ref = db.collection("notifications").document()
             
             notification_data = {
-                "recipient_uid": follower_uid,
+                "recipient_uid": follower.id,
                 "sender_uid": poster_uid,
                 "sender_name": poster_name,
                 "sender_image": poster_pic,
@@ -275,20 +282,29 @@ async def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type:
                 "object_id": post_id,
                 "message": f"{poster_name} posted a new {post_type}",
                 "is_read": False,
-                "created_at": firestore.SERVER_TIMESTAMP,  # Let Firestore handle timestamp
+                "created_at": firestore.SERVER_TIMESTAMP,
                 "metadata": {
                     "post_type": post_type,
-                    "preview_content": poster_data.get("text", "")[:100] + "..." if poster_data.get("text") else ""
+                    "preview_content": poster_data.get("text", "")[:100] + "..."
                 }
             }
             
             batch.set(notification_ref, notification_data)
+            notification_count += 1
 
-        await batch.commit()
-        print(f"Successfully notified {len(followers)} followers")
+            # Commit every 400 operations (Firestore batch limit is 500)
+            if notification_count % 400 == 0:
+                batch.commit()
+                batch = db.batch()
+
+        # Commit remaining notifications
+        if notification_count > 0:
+            batch.commit()
+
+        logger.info(f"Notified {notification_count} followers about post {post_id}")
 
     except Exception as e:
-        print(f"Error notifying followers: {str(e)}")
+        logger.error(f"Notification error: {str(e)}\n{traceback.format_exc()}")
 
 
 
@@ -1306,15 +1322,17 @@ async def delete_profile_picture(
 
 
     # Forum endpoints
+# Forum endpoints
 @app.post('/forum/posts',
           summary="Create a new forum post",
           description="Create a new post in the forum",
           response_description="The created post")
-async def create_forum_post(
+def create_forum_post(
     post_data: ForumPostCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     try:
+        # Authentication
         decoded_token = auth.verify_id_token(credentials.credentials)
         user_uid = decoded_token['uid']
         user_email = decoded_token.get('email', '')
@@ -1322,26 +1340,26 @@ async def create_forum_post(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     try:
-        # Validate that text exists
+        # Validation
         if not post_data.text.strip():
             raise HTTPException(status_code=400, detail="Text is required for a post")
 
-        # Get username from profile or use email prefix
+        # Get user profile
         user_doc = db.collection("users").document(user_uid).get()
-        username = "user"
+        username = user_email.split("@")[0]  # Default to email prefix
         if user_doc.exists:
             profile = user_doc.to_dict().get("profile", {})
-            username = profile.get("username", user_email.split("@")[0])
+            username = profile.get("username", username)
 
-        # Create the forum post
+        # Create post document
         post_ref = db.collection("forum_posts").document()
         post_dict = {
             "user_id": user_uid,
             "username": username,
             "text": post_data.text,
-            "image_url": post_data.image_url,
-            "audio_url": post_data.audio_url,
-            "location": post_data.location,
+            "image_url": post_data.image_url if post_data.image_url else None,
+            "audio_url": post_data.audio_url if post_data.audio_url else None,
+            "location": post_data.location if post_data.location else None,
             "likes": 0,
             "liked_by": [],
             "comments": [],
@@ -1353,18 +1371,21 @@ async def create_forum_post(
             post_dict["build_id"] = post_data.build_id
 
         post_ref.set(post_dict)
-        post_id = post_ref.id  # Needed for notifications
+        post_id = post_ref.id
 
-        # Optionally fetch build data to include in response
+        # Get build data if needed
         build_data = None
         if post_data.build_id:
-            build_ref = db.collection("users").document(user_uid).collection("builds").document(post_data.build_id)
-            build_doc = build_ref.get()
+            build_doc = db.collection("users").document(user_uid)\
+                         .collection("builds").document(post_data.build_id).get()
             if build_doc.exists:
                 build_data = build_doc.to_dict()
 
-        # 🔔 Notify followers
-        notify_followers_on_new_post(poster_uid=user_uid, post_id=post_id, post_type="thread")
+        # Notify followers in background
+        threading.Thread(
+            target=notify_followers_on_new_post,
+            args=(user_uid, post_id, "thread")
+        ).start()
 
         return {
             **post_dict,
@@ -1375,11 +1396,11 @@ async def create_forum_post(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error creating post: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to create post"
-        )
+        logger.error(f"Error creating post: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Failed to create post")
+
+
+
     
 
 
@@ -1785,13 +1806,13 @@ async def follow_user(
 
         # Check if target user exists
         target_user_ref = db.collection("users").document(target_user_uid)
-        target_user_doc = await target_user_ref.get()
+        target_user_doc = target_user_ref.get()
         if not target_user_doc.exists:
             raise HTTPException(status_code=404, detail="User not found")
 
         # Get current user data
         current_user_ref = db.collection("users").document(current_user_uid)
-        current_user_doc = await current_user_ref.get()
+        current_user_doc = current_user_ref.get()
         current_user_data = current_user_doc.to_dict() or {}
         
         # Get profile data for notification
@@ -1828,10 +1849,10 @@ async def follow_user(
                     "follower_count": len(following) + 1  # +1 because we haven't updated yet
                 }
             }
-            await notification_ref.set(notification_data)
+            notification_ref.set(notification_data)
 
         # Update following list
-        await current_user_ref.update({"following": following})
+        current_user_ref.update({"following": following})
 
         return {
             "action": action,
