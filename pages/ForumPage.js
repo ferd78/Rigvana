@@ -35,7 +35,6 @@ export default function ForumPage() {
   const [selectedBuild, setSelectedBuild] = useState(null);
   const [userBuilds, setUserBuilds] = useState([]);
 
-
   useEffect(() => {
     if (repost) {
       setSelectedTab("ForYou");
@@ -67,7 +66,7 @@ export default function ForumPage() {
         ...p,
         created_at: new Date(p.created_at),
         commentsData: p.comments?.map(c => ({ ...c, created_at: new Date(c.created_at) })) || [],
-        profile_picture_url: p.profile_picture_url || null,
+        profile_picture_url: p.profile_picture || null, // Changed from p.profile_picture_url to p.profile_picture
       }));
       setPosts(processed);
     } catch {
@@ -96,7 +95,6 @@ export default function ForumPage() {
     }
   };
 
-
   useEffect(() => {
     loadBuilds();
   }, []);
@@ -109,7 +107,6 @@ export default function ForumPage() {
     const data = await res.json();
     setUserBuilds(data);
   };
-
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -144,7 +141,6 @@ export default function ForumPage() {
     setNewImage(null);
     setSelectedBuild(null);
   };
-
 
   const handlePost = async () => {
     if (!newText.trim()) {
@@ -187,13 +183,12 @@ export default function ForumPage() {
           ...np,
           liked: false,
           commentsData: [],
-          profile_picture_url: np.profile_picture_url || null,
+          profile_picture_url: np.profile_picture || null, // Changed from np.profile_picture_url to np.profile_picture
           created_at: new Date(),
         },
         ...prev,
       ]);
 
-      // ✅ Reset inputs
       setNewText("");
       setNewImage(null);
       setSelectedBuild(null);
@@ -207,7 +202,6 @@ export default function ForumPage() {
       setUploading(false);
     }
   };
-
 
   const toggleForumLike = async id => {
     try {
@@ -295,10 +289,10 @@ export default function ForumPage() {
             </Pressable>
 
             {selectedBuild && (
-            <Text className="text-white text-helvetica font-semibold mt-2">
-              Selected Build: {selectedBuild.name}
-            </Text>
-          )}
+              <Text className="text-white text-helvetica font-semibold mt-2">
+                Selected Build: {selectedBuild.name}
+              </Text>
+            )}
           </View>
         )}
 
@@ -313,10 +307,17 @@ export default function ForumPage() {
             <View className="flex-row justify-between">
               <View className="flex-row items-center">
                 <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: p.user_id })}>
-                  {p.profile_picture_url ?
-                    <Image source={{ uri: p.profile_picture_url }} className="w-9 h-9 rounded-full mr-2" />
-                    : <View className="w-9 h-9 rounded-full bg-gray-800 justify-center items-center mr-2"><Ionicons name="person-circle-outline" size={36} color="white" /></View>
-                  }
+                  {p.profile_picture_url ? (
+                    <Image 
+                      source={{ uri: p.profile_picture_url }} 
+                      className="w-9 h-9 rounded-full mr-2" 
+                      onError={() => console.log("Failed to load profile picture")}
+                    />
+                  ) : (
+                    <View className="w-9 h-9 rounded-full bg-gray-800 justify-center items-center mr-2">
+                      <Ionicons name="person-circle-outline" size={36} color="white" />
+                    </View>
+                  )}
                 </Pressable>
                 <Text className="text-white ml-2 font-bold">@{p.username}</Text>
               </View>
@@ -335,7 +336,7 @@ export default function ForumPage() {
                 <Pressable
                   onPress={() => navigation.navigate("ViewPage", { 
                     buildId: p.build_id,
-                    userId: p.user_id  // Add user_id to params
+                    userId: p.user_id
                   })}
                   className=""
                 >
@@ -380,16 +381,12 @@ export default function ForumPage() {
                     setBuildPickerVisible(false);
                     loadBuilds();
                   }}
-
                   onRefresh={onRefresh}
-
                   className="bg-[#333] p-3 rounded-lg mb-2"
                 >
                   <Text className="text-white font-bold">{build.name}</Text>
                   <Text className="text-gray-400 text-sm">{build.description}</Text>
                 </Pressable>
-
-                
               ))}
             </ScrollView>
             
@@ -402,12 +399,9 @@ export default function ForumPage() {
                 <Ionicons name="close-circle-outline" size={30} color="white" />
               </Pressable>
             </View>
-
-            
           </View>
         </View>
       </Modal>
-
     </MainLayout>
   );
 }

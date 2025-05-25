@@ -307,7 +307,41 @@ def notify_followers_on_new_post(poster_uid: str, post_id: str, post_type: str):
         logger.error(f"Notification error: {str(e)}\n{traceback.format_exc()}")
 
 
+def notify_post_like(liker_uid: str, post_owner_uid: str, post_id: str):
+    try:
+        # Get liker's profile info
+        liker_doc = db.collection("users").document(liker_uid).get()
+        if not liker_doc.exists:
+            return
+            
+        liker_data = liker_doc.to_dict()
+        liker_profile = liker_data.get("profile", {})
+        liker_name = liker_profile.get("username", "Someone")
+        liker_pic = liker_profile.get("profile_picture_url", "")
 
+        # Create notification
+        notification_ref = db.collection("notifications").document()
+        notification_data = {
+            "recipient_uid": post_owner_uid,
+            "sender_uid": liker_uid,
+            "sender_name": liker_name,
+            "sender_image": liker_pic,
+            "type": "post_like",
+            "object_id": post_id,
+            "message": f"{liker_name} liked your post",
+            "is_read": False,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "metadata": {
+                "action": "like",
+                "post_id": post_id
+            }
+        }
+        
+        notification_ref.set(notification_data)
+        logger.info(f"Sent like notification to {post_owner_uid}")
+
+    except Exception as e:
+        logger.error(f"Error sending like notification: {str(e)}\n{traceback.format_exc()}")
 
 ######################################################### ENPOINTS ############################################
 
@@ -1325,8 +1359,8 @@ async def delete_profile_picture(
 # Forum endpoints
 @app.post('/forum/posts',
           summary="Create a new forum post",
-          description="Create a new post in the forum",
-          response_description="The created post")
+          description="Create a new post in the forum with user profile information",
+          response_description="The created post with user profile data")
 def create_forum_post(
     post_data: ForumPostCreate,
     credentials: HTTPAuthorizationCredentials = Depends(security)
@@ -1344,18 +1378,23 @@ def create_forum_post(
         if not post_data.text.strip():
             raise HTTPException(status_code=400, detail="Text is required for a post")
 
-        # Get user profile
+        # Get user profile data
         user_doc = db.collection("users").document(user_uid).get()
         username = user_email.split("@")[0]  # Default to email prefix
+        profile_pic = None
+        
         if user_doc.exists:
-            profile = user_doc.to_dict().get("profile", {})
+            user_data = user_doc.to_dict()
+            profile = user_data.get("profile", {})
             username = profile.get("username", username)
+            profile_pic = profile.get("profile_picture")
 
         # Create post document
         post_ref = db.collection("forum_posts").document()
         post_dict = {
             "user_id": user_uid,
             "username": username,
+            "profile_picture": profile_pic,
             "text": post_data.text,
             "image_url": post_data.image_url if post_data.image_url else None,
             "audio_url": post_data.audio_url if post_data.audio_url else None,
@@ -1390,7 +1429,8 @@ def create_forum_post(
         return {
             **post_dict,
             "id": post_id,
-            "build_data": build_data
+            "build_data": build_data,
+            "created_at": post_dict["created_at"].isoformat()
         }
 
     except HTTPException:
@@ -1404,49 +1444,88 @@ def create_forum_post(
     
 
 
-@app.get('/forum/posts')
+@app.get('/forum/posts',
+         summary="Get forum posts",
+         description="Retrieve all forum posts with user profile information",
+         response_description="List of posts with complete user data")
 async def get_forum_posts(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    limit: int = Query(20, description="Number of posts to return"),
+    last_post_id: str = Query(None, description="Last post ID for pagination")
 ):
     try:
         # Verify token
         decoded_token = auth.verify_id_token(credentials.credentials)
         user_uid = decoded_token['uid']
 
-        # Query posts
+        # Query posts with pagination support
         posts_ref = db.collection("forum_posts").order_by("created_at", direction=firestore.Query.DESCENDING)
-        posts = posts_ref.stream()
+        
+        if last_post_id:
+            last_post = db.collection("forum_posts").document(last_post_id).get()
+            if last_post.exists:
+                posts_ref = posts_ref.start_after(last_post)
 
+        posts = posts_ref.limit(limit).stream()
+
+        # Batch fetch user profiles for optimization
+        user_ids = set()
         post_list = []
+        
+        # First pass to collect all user IDs
         for post in posts:
             post_data = post.to_dict()
-            post_data['id'] = post.id
+            user_ids.add(post_data['user_id'])
+            post_list.append({
+                **post_data,
+                'id': post.id
+            })
 
-            # Convert Firestore DocumentReferences to strings
-            post_data = convert_document_references(post_data)
+        # Batch fetch user profiles
+        users_ref = db.collection("users")
+        user_profiles = {}
+        for user_id in user_ids:
+            user_doc = users_ref.document(user_id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                user_profiles[user_id] = {
+                    'profile_picture': user_data.get('profile', {}).get('profile_picture'),
+                    'username': user_data.get('profile', {}).get('username', user_data.get('email', '').split('@')[0])
+                }
 
-            # Convert Firestore timestamps
+        # Second pass to enrich post data
+        enriched_posts = []
+        for post in post_list:
+            # Convert Firestore data types
+            post_data = convert_document_references(post)
             post_data = convert_firestore_timestamp(post_data)
+
+            # Add user profile data
+            user_info = user_profiles.get(post_data['user_id'], {})
+            post_data['profile_picture'] = user_info.get('profile_picture')
+            if 'username' not in post_data:
+                post_data['username'] = user_info.get('username')
 
             # Check if current user liked this post
             post_data['liked'] = user_uid in post_data.get('liked_by', [])
 
-            # If there's a build reference, include build data
+            # Include build data if present
             if post_data.get('build_id'):
                 build_user_id = post_data['user_id']
-                build_ref = db.collection("users").document(build_user_id).collection("builds").document(post_data['build_id'])
+                build_ref = db.collection("users").document(build_user_id)\
+                              .collection("builds").document(post_data['build_id'])
                 build_doc = build_ref.get()
                 if build_doc.exists:
                     build_data = convert_firestore_timestamp(build_doc.to_dict())
                     build_data = convert_document_references(build_data)
                     post_data['build_data'] = build_data
 
-            post_list.append(post_data)
+            enriched_posts.append(post_data)
 
-        return JSONResponse(content=post_list)
+        return JSONResponse(content=enriched_posts)
 
     except Exception as e:
-        print(f"Error retrieving posts: {str(e)}")
+        logger.error(f"Error retrieving posts: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve posts"
@@ -1456,7 +1535,7 @@ async def get_forum_posts(
           summary="Like or unlike a post",
           description="Toggle like status for a forum post",
           response_description="Updated like count")
-async def toggle_post_like(
+def toggle_post_like(
     post_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
@@ -1476,25 +1555,37 @@ async def toggle_post_like(
         post_data = post_doc.to_dict()
         liked_by = post_data.get("liked_by", [])
         likes = post_data.get("likes", 0)
+        post_owner_uid = post_data.get("user_id")
+        
+        # Check if this is a like or unlike action
+        is_like_action = user_uid not in liked_by
 
-        if user_uid in liked_by:
-            # Unlike
-            liked_by.remove(user_uid)
-            likes -= 1
-        else:
-            # Like
+        if is_like_action:
+            # Like action
             liked_by.append(user_uid)
             likes += 1
+        else:
+            # Unlike action
+            liked_by.remove(user_uid)
+            likes -= 1
 
+        # Update the post
         post_ref.update({
             "likes": likes,
             "liked_by": liked_by
         })
 
-        return {"likes": likes, "liked": user_uid in liked_by}
+        # Only send notification for like actions (not unlikes)
+        if is_like_action and post_owner_uid != user_uid:  # Don't notify if user liked their own post
+            threading.Thread(
+                target=notify_post_like,
+                args=(user_uid, post_owner_uid, post_id)
+            ).start()
+
+        return {"likes": likes, "liked": is_like_action}
 
     except Exception as e:
-        print(f"Error toggling like: {str(e)}")
+        logger.error(f"Error toggling like: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
             detail="Failed to toggle like"

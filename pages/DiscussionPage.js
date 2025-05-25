@@ -39,7 +39,8 @@ export default function DiscussionPage({ route }) {
       replies: [],
       isReplying: false,
       replyText: "",
-      created_at: new Date(c.created_at)
+      created_at: new Date(c.created_at),
+      profile_picture_url: c.profile_picture_url || null // Ensure profile picture is properly initialized
     }))
   );
   const [commentCount, setCommentCount] = useState(comments.length);
@@ -56,8 +57,8 @@ export default function DiscussionPage({ route }) {
   useEffect(() => {
     (async () => {
       const token = await getToken();
-      const decoded = JSON.parse(atob(token.split('.')[1])); // decode Firebase JWT
-      setUserUid(decoded.user_id); // or 'uid' depending on your backend
+      const decoded = JSON.parse(atob(token.split('.')[1]));
+      setUserUid(decoded.user_id);
     })();
   }, []);
 
@@ -116,7 +117,6 @@ export default function DiscussionPage({ route }) {
 
             if (!res.ok) throw new Error("Delete failed");
 
-            // Remove the comment from local state
             setComments(prev => 
               prev.filter(c => c.comment_id !== commentId)
             );
@@ -159,6 +159,7 @@ export default function DiscussionPage({ route }) {
         replyText: "",
         liked: false,
         likes: 0,
+        profile_picture_url: json.profile_picture_url || null // Ensure profile picture is included
       };
     } catch (error) {
       console.error('Comment error:', error.message);
@@ -167,97 +168,97 @@ export default function DiscussionPage({ route }) {
   };
 
   const uploadImage = async (uri) => {
-  try {
-    const filename = uri.split('/').pop();
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : 'image';
+    try {
+      const filename = uri.split('/').pop();
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : 'image';
 
-    const formData = new FormData();
-    formData.append('file', {
-      uri,
-      name: filename,
-      type,
-    });
+      const formData = new FormData();
+      formData.append('file', {
+        uri,
+        name: filename,
+        type,
+      });
 
-    const token = await getToken();
-    const response = await fetch(`${GLOBAL_URL}/upload-comment-image`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data',
-      },
-      body: formData,
-    });
+      const token = await getToken();
+      const response = await fetch(`${GLOBAL_URL}/upload-comment-image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Image upload failed');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Image upload failed');
+      }
+
+      const data = await response.json();
+      return data.image_url;
+    } catch (error) {
+      console.error('Upload error:', error);
+      throw error;
     }
-
-    const data = await response.json();
-    return data.image_url; // Note: Changed from data.url to data.image_url
-  } catch (error) {
-    console.error('Upload error:', error);
-    throw error;
-  }
-};
+  };
 
   const handleSend = async () => {
-  if (!newComment.trim() && !newImage) {
-    Alert.alert("Error", "Comment text or image is required");
-    return;
-  }
-
-  let imageUrl = null;
-
-  try {
-    setSubmittingComment(true);
-
-    if (newImage) {
-      imageUrl = await uploadImage(newImage);
+    if (!newComment.trim() && !newImage) {
+      Alert.alert("Error", "Comment text or image is required");
+      return;
     }
 
-    const tempId = uuidv4();
-    const tempComment = {
-      comment_id: tempId,
-      username: "currentUser",
-      text: newComment,
-      image_url: imageUrl, // Changed from imageUri to image_url to match backend
-      likes: 0,
-      liked: false,
-      replies: [],
-      created_at: new Date(),
-      isReplying: false,
-      replyText: "",
-      profile_picture_url: null,
-      user_id: userUid
-    };
+    let imageUrl = null;
 
-    setComments(prev => [...prev, tempComment]);
-    setCommentCount(c => c + 1);
-    setNewComment("");
-    setNewImage(null);
+    try {
+      setSubmittingComment(true);
 
-    const addedComment = await addComment(initialPost.id, newComment, imageUrl);
+      if (newImage) {
+        imageUrl = await uploadImage(newImage);
+      }
 
-    setComments(prev =>
-      prev.map(c =>
-        c.comment_id === tempId
-          ? { ...addedComment, user_id: userUid }
-          : c
-      )
-    );
+      const tempId = uuidv4();
+      const tempComment = {
+        comment_id: tempId,
+        username: "currentUser",
+        text: newComment,
+        image_url: imageUrl,
+        likes: 0,
+        liked: false,
+        replies: [],
+        created_at: new Date(),
+        isReplying: false,
+        replyText: "",
+        profile_picture_url: null,
+        user_id: userUid
+      };
 
-    if (onComment) {
-      onComment(addedComment.text);
+      setComments(prev => [...prev, tempComment]);
+      setCommentCount(c => c + 1);
+      setNewComment("");
+      setNewImage(null);
+
+      const addedComment = await addComment(initialPost.id, newComment, imageUrl);
+
+      setComments(prev =>
+        prev.map(c =>
+          c.comment_id === tempId
+            ? { ...addedComment, user_id: userUid }
+            : c
+        )
+      );
+
+      if (onComment) {
+        onComment(addedComment.text);
+      }
+    } catch (error) {
+      console.error("Comment error:", error);
+      Alert.alert("Error", error.message || "Failed to post comment");
+    } finally {
+      setSubmittingComment(false);
     }
-  } catch (error) {
-    console.error("Comment error:", error);
-    Alert.alert("Error", error.message || "Failed to post comment");
-  } finally {
-    setSubmittingComment(false);
-  }
-};
+  };
 
   const pickImage = async () => {
     try {
@@ -361,7 +362,7 @@ export default function DiscussionPage({ route }) {
         created_at: new Date(),
         parent_id: commentId,
         profile_picture_url: null,
-        user_id: userUid // Add user_id to replies
+        user_id: userUid
       };
 
       setComments(prev =>
@@ -415,16 +416,19 @@ export default function DiscussionPage({ route }) {
         <View className="mb-6 pb-4 border-b border-gray-800">
           <View className="flex-row items-center justify-between mb-2">
             <View className="flex-row items-center">
-              {initialPost.profile_picture_url ? (
-                <Image 
-                  source={{ uri: initialPost.profile_picture_url }}
-                  className="w-9 h-9 rounded-full bg-gray-700"
-                />
-              ) : (
-                <View className="w-9 h-9 rounded-full bg-gray-900 justify-center items-center">
-                  <Ionicons name="person" size={18} color="#666" />
-                </View>
-              )}
+              <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: initialPost.user_id })}>
+                {initialPost.profile_picture_url ? (
+                  <Image 
+                    source={{ uri: initialPost.profile_picture_url }}
+                    className="w-9 h-9 rounded-full bg-gray-700"
+                    onError={() => console.log("Failed to load profile picture")}
+                  />
+                ) : (
+                  <View className="w-9 h-9 rounded-full bg-gray-900 justify-center items-center">
+                    <Ionicons name="person-circle-outline" size={36} color="white" />
+                  </View>
+                )}
+              </Pressable>
               <View className="ml-2">
                 <Text className="text-white font-bold text-base">@{initialPost.username}</Text>
                 <Text className="text-gray-500 text-xs mt-0.5">{new Date(initialPost.created_at).toLocaleString()}</Text>
@@ -475,38 +479,61 @@ export default function DiscussionPage({ route }) {
 
         {comments.map(comment => (
           <View key={comment.comment_id} className="mb-4">
-            <View className="flex-row justify-between items-start">
-              <View>
-                <Text className="text-white font-semibold">@{comment.username}</Text>
-                <Text className="text-gray-300">{comment.text}</Text>
+            <View className="flex-row">
+              <Pressable onPress={() => navigation.navigate('OtherProfile', { userId: comment.user_id })}>
+                {comment.profile_picture_url ? (
+                  <Image 
+                    source={{ uri: comment.profile_picture_url }}
+                    className="w-8 h-8 rounded-full mr-2"
+                    onError={() => console.log("Failed to load commenter profile picture")}
+                  />
+                ) : (
+                  <View className="w-8 h-8 rounded-full bg-gray-800 justify-center items-center mr-2">
+                    <Ionicons name="person-circle-outline" size={24} color="white" />
+                  </View>
+                )}
+              </Pressable>
+              <View className="flex-1">
+                <View className="flex-row justify-between items-start">
+                  <View>
+                    <Text className="text-white font-semibold">@{comment.username}</Text>
+                    <Text className="text-gray-300">{comment.text}</Text>
+                  </View>
+                  {(userUid === comment.user_id || userUid === initialPost.user_id) && (
+                    <Pressable 
+                      onPress={() => handleDeleteComment(comment.comment_id)}
+                      className="p-1"
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ff4c4c" />
+                    </Pressable>
+                  )}
+                </View>
+
+                {comment.image_url && (
+                  <Image
+                    source={{ uri: comment.image_url }}
+                    className="w-full h-48 rounded-lg mt-2"
+                    resizeMode="cover"
+                  />
+                )}
+
+                <Text className="text-gray-500 text-xs mt-1">{comment.created_at.toLocaleString()}</Text>
               </View>
-              {(userUid === comment.user_id || userUid === initialPost.user_id) && (
-                <Pressable 
-                  onPress={() => handleDeleteComment(comment.comment_id)}
-                  className="p-1"
-                >
-                  <Ionicons name="trash-outline" size={16} color="#ff4c4c" />
-                </Pressable>
-              )}
             </View>
-
-            {comment.image_url && (
-              <Image
-                source={{ uri: comment.image_url }}
-                className="w-full h-48 rounded-lg mt-2"
-                resizeMode="cover"
-              />
-            )}
-
-            <Text className="text-gray-500 text-xs mt-1">{comment.created_at.toLocaleString()}</Text>
           </View>
         ))}
       </ScrollView>
 
       <View className="flex-row items-center p-4 border-t border-gray-800 bg-[#161010] absolute bottom-0 left-0 right-0">
-        <Pressable onPress={pickImage} className="p-2">
-          <Ionicons name="camera-outline" size={24} color="white" />
-        </Pressable>
+        {newImage ? (
+          <Pressable onPress={() => setNewImage(null)} className="p-2">
+            <Ionicons name="close-outline" size={24} color="#ff4c4c" />
+          </Pressable>
+        ) : (
+          <Pressable onPress={pickImage} className="p-2">
+            <Ionicons name="camera-outline" size={24} color="white" />
+          </Pressable>
+        )}
         <TextInput
           className="flex-1 bg-gray-800 text-white rounded-full px-4 py-2 text-base max-h-30 mx-2"
           placeholder="Add a comment..."
@@ -515,14 +542,14 @@ export default function DiscussionPage({ route }) {
           onChangeText={setNewComment}
           multiline
         />
-        <Pressable onPress={handleSend} className="p-2" disabled={!newComment.trim() || submittingComment}>
+        <Pressable onPress={handleSend} className="p-2" disabled={!newComment.trim() && !newImage || submittingComment}>
           {submittingComment ? (
             <ActivityIndicator size="small" color="#9fcfff" />
           ) : (
             <Ionicons 
               name="send" 
               size={24} 
-              color={newComment.trim() ? "#9fcfff" : "#555"} 
+              color={newComment.trim() || newImage ? "#9fcfff" : "#555"} 
             />
           )}
         </Pressable>
