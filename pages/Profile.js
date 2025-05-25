@@ -1,3 +1,4 @@
+// pages/ProfilePage.js
 import React, { useState, useEffect } from "react";
 import {
   ScrollView,
@@ -20,7 +21,6 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("Posts");
 
   useEffect(() => {
     (async () => {
@@ -33,14 +33,16 @@ export default function ProfilePage() {
         if (!profRes.ok) throw new Error("Failed to fetch profile");
         const profData = await profRes.json();
         setProfile(profData);
-
-        const postRes = await fetch(`${GLOBAL_URL}/user-posts/${profData.uid}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const postRes = await fetch(
+          `${GLOBAL_URL}/user-posts/${profData.uid}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
         if (!postRes.ok) throw new Error("Failed to fetch posts");
         const postData = await postRes.json();
         setPosts(
-          postData.map(p => ({ ...p, created_at: new Date(p.created_at) }))
+          postData.map((p) => ({ ...p, created_at: new Date(p.created_at) }))
         );
       } catch (err) {
         console.error(err);
@@ -51,35 +53,37 @@ export default function ProfilePage() {
     })();
   }, []);
 
-  const onlyPosts = posts.filter(p => !p.build_id);
-  const onlyBuilds = posts.filter(p => p.build_id);
-
-  const toggleLike = async postId => {
+  const toggleLike = async (postId) => {
     try {
       const token = await getToken();
-      const res = await fetch(`${GLOBAL_URL}/forum/posts/${postId}/like`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `${GLOBAL_URL}/forum/posts/${postId}/like`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
       if (!res.ok) throw new Error();
       const { likes, liked } = await res.json();
-      setPosts(ps =>
-        ps.map(p => (p.id === postId ? { ...p, likes, liked } : p))
+      setPosts((ps) =>
+        ps.map((p) =>
+          p.id === postId ? { ...p, likes, liked } : p
+        )
       );
     } catch {
       Alert.alert("Error", "Could not toggle like");
     }
   };
 
-  const sharePost = async postId => {
+  const sharePost = async (postId) => {
     try {
       const token = await getToken();
       await fetch(`${GLOBAL_URL}/forum/posts/${postId}/share`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-      setPosts(ps =>
-        ps.map(p =>
+      setPosts((ps) =>
+        ps.map((p) =>
           p.id === postId
             ? { ...p, shares: (p.shares || 0) + 1 }
             : p
@@ -104,30 +108,21 @@ export default function ProfilePage() {
     <MainLayout>
       <ScrollView className="flex-1 bg-semiblack">
         <EditProfile />
-        <View className="flex-row mt-4 border-b border-gray-600">
-          {["Posts", "Builds"].map(t => (
-            <Pressable
-              key={t}
-              onPress={() => setTab(t)}
-              className={`flex-1 items-center py-2 ${
-                tab === t ? "border-b-2 border-white" : ""
-              }`}
-            >
-              <Text
-                className={
-                  tab === t ? "text-white font-bold" : "text-gray-400"
-                }
-              >
-                {t}
-              </Text>
-            </Pressable>
-          ))}
+        <View className="border-b border-gray-600 mt-4 mb-2">
+          <Text className="text-white font-bold text-center py-2">
+            Posts
+          </Text>
         </View>
 
-        {(tab === "Posts" ? onlyPosts : onlyBuilds).map(p => (
+        {posts.map((p) => (
           <Pressable
             key={p.id}
-            onPress={() => navigation.navigate("Forum", { screen: "Discussion", params: { post: p } })}
+            onPress={() =>
+              navigation.navigate("Forum", {
+                screen: "Discussion",
+                params: { post: p },
+              })
+            }
             className="m-4 bg-[#222] rounded-xl p-4"
           >
             <View className="flex-row justify-between items-center mb-2">
@@ -150,13 +145,8 @@ export default function ProfilePage() {
                   @{p.username}
                 </Text>
               </View>
-              <Ionicons
-                name="chatbubble-outline"
-                size={20}
-                color="#888"
-              />
+              <Ionicons name="chatbubble-outline" size={20} color="#888" />
             </View>
-
             <Text className="text-white mb-2">{p.text}</Text>
             {p.image_url && (
               <Image
@@ -188,16 +178,13 @@ export default function ProfilePage() {
                 <Text className="text-gray-400 ml-1">{p.likes}</Text>
               </Pressable>
               <View className="flex-row items-center">
-                <Ionicons
-                  name="chatbubble-outline"
-                  size={20}
-                  color="#888"
-                />
+                <Ionicons name="chatbubble-outline" size={20} color="#888" />
                 <Text className="text-gray-400 ml-1">
                   {p.comments.length}
                 </Text>
               </View>
-              <Pressable
+            {/* this part is for the share button, Harman said dia gak suka jadi I comment out */}
+            {/*  <Pressable
                 onPress={() => sharePost(p.id)}
                 className="flex-row items-center"
               >
@@ -207,7 +194,7 @@ export default function ProfilePage() {
                   color="#888"
                 />
                 <Text className="text-gray-400 ml-1">{p.shares}</Text>
-              </Pressable>
+              </Pressable> */}
             </View>
           </Pressable>
         ))}

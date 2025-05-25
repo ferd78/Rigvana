@@ -1,3 +1,4 @@
+// pages/OtherProfile.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -21,7 +22,6 @@ export default function OtherProfile() {
   const [profile, setProfile]     = useState(null);
   const [posts, setPosts]         = useState([]);
   const [loading, setLoading]     = useState(true);
-  const [tab, setTab]             = useState("Posts");
   const [error, setError]         = useState(null);
   const [isFollowed, setIsFollowed] = useState(false);
 
@@ -29,7 +29,6 @@ export default function OtherProfile() {
     (async () => {
       try {
         const token = await getToken();
-
         let res = await fetch(
           `${GLOBAL_URL}/get-other-profile?target_uid=${userId}`,
           { headers: { Authorization: `Bearer ${token}` } }
@@ -106,8 +105,7 @@ export default function OtherProfile() {
     );
   }
 
-  const onlyPosts  = posts.filter(p => !p.build_id);
-  const onlyBuilds = posts.filter(p => p.build_id != null && p.build_id !== "");
+  const onlyPosts = posts;
 
   return (
     <MainLayout>
@@ -115,11 +113,11 @@ export default function OtherProfile() {
         <View className="flex-row justify-between items-center px-4 mt-6">
           <View className="flex-1 mr-4">
             <Text className="text-white text-xl font-bold text-helvetica">
-              @{profile.username || "No username set"}
+              @{profile.username}
             </Text>
             <Text className="text-white text-helvetica">{profile.email}</Text>
             <Text className="mt-4 text-white text-helvetica">
-              {profile.description || "No description set"}
+              {profile.description}
             </Text>
             <Text className="text-gray-300 text-sm mt-1 text-helvetica">
               {profile.follower_count} followers
@@ -135,8 +133,7 @@ export default function OtherProfile() {
             resizeMode="cover"
           />
         </View>
-
-        <View className="flex-row px-4 mt-4 mb-6 space-x-4 gap-4">
+        <View className="flex-row px-4 mt-6 mb-3 space-x-4 gap-5">
           <Pressable
             onPress={toggleFollow}
             className={`flex-1 py-2 rounded-xl items-center ${
@@ -155,27 +152,19 @@ export default function OtherProfile() {
             onPress={() => Alert.alert("Mention", `@${profile.username}`)}
             className="flex-1 bg-white py-2 rounded-xl items-center"
           >
-            <Text className="text-black font-bold text-helvetica">Mention</Text>
+            <Text className="text-black font-bold text-helvetica">
+              Mention
+            </Text>
           </Pressable>
         </View>
 
-        <View className="flex-row border-b border-gray-600">
-          {["Posts", "Builds"].map(t => (
-            <Pressable
-              key={t}
-              onPress={() => setTab(t)}
-              className={`flex-1 items-center py-2 ${
-                tab === t ? "border-b-2 border-white" : ""
-              }`}
-            >
-              <Text className={`${tab === t ? "text-white font-bold" : "text-gray-400"}`}>
-                {t}
-              </Text>
-            </Pressable>
-          ))}
+        <View className="border-b border-gray-600 mb-2">
+          <Text className="text-white font-bold text-center py-2">
+            Posts
+          </Text>
         </View>
 
-        { (tab === "Posts" ? onlyPosts : onlyBuilds).map(p => (
+        {onlyPosts.map(p => (
           <Pressable
             key={p.id}
             onPress={() =>
@@ -192,13 +181,20 @@ export default function OtherProfile() {
                   />
                 ) : (
                   <View className="w-9 h-9 rounded-full bg-gray-800 mr-2 justify-center items-center">
-                    <Ionicons name="person-circle-outline" size={36} color="white" />
+                    <Ionicons
+                      name="person-circle-outline"
+                      size={36}
+                      color="white"
+                    />
                   </View>
                 )}
-                <Text className="text-white font-bold">@{p.username}</Text>
+                <Text className="text-white font-bold">
+                  @{p.username}
+                </Text>
               </View>
               <Ionicons name="chatbubble-outline" size={20} color="#888" />
             </View>
+
             <Text className="text-white mb-2">{p.text}</Text>
             {p.image_url && (
               <Image
@@ -208,14 +204,20 @@ export default function OtherProfile() {
             )}
             {p.build_data && (
               <View className="bg-gray-700 rounded-lg p-3 mb-2">
-                <Text className="text-white font-bold">{p.build_data.name}</Text>
+                <Text className="text-white font-bold">
+                  {p.build_data.name}
+                </Text>
                 <Text className="text-gray-300 text-sm mt-1">
                   {p.build_data.description}
                 </Text>
               </View>
             )}
+
             <View className="flex-row justify-around pt-2 border-t border-gray-700">
-              <Pressable onPress={() => toggleLike(p.id)} className="flex-row items-center">
+              <Pressable
+                onPress={() => toggleLike(p.id)}
+                className="flex-row items-center"
+              >
                 <Ionicons
                   name={p.liked ? "heart" : "heart-outline"}
                   size={20}
@@ -225,16 +227,22 @@ export default function OtherProfile() {
               </Pressable>
               <View className="flex-row items-center">
                 <Ionicons name="chatbubble-outline" size={20} color="#888" />
-                <Text className="text-gray-400 ml-1">{p.comments.length}</Text>
+                <Text className="text-gray-400 ml-1">
+                  {p.comments.length}
+                </Text>
               </View>
-              <Pressable onPress={() => navigation.navigate("Forum", { repost: p })} className="flex-row items-center">
-                <Ionicons name="repeat-outline" size={20} color="#888" />
-                <Text className="text-gray-400 ml-1">0</Text>
-              </Pressable>
-              <Pressable onPress={() => sharePost(p.id)} className="flex-row items-center">
-                <Ionicons name="share-social-outline" size={20} color="#888" />
+              {/* ini juga buat share, so i commented it out
+              <Pressable
+                onPress={() => sharePost(p.id)}
+                className="flex-row items-center"
+              >
+                <Ionicons
+                  name="share-social-outline"
+                  size={20}
+                  color="#888"
+                />
                 <Text className="text-gray-400 ml-1">{p.shares}</Text>
-              </Pressable>
+              </Pressable> */}
             </View>
           </Pressable>
         ))}
