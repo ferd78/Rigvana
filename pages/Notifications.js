@@ -73,6 +73,7 @@ export default function NotificationsPage() {
       case "new_comment":
       case "new_thread":
       case "new_tweet":
+      case "post_like":
         navigation.navigate("DiscussionPage", { 
           post: { id: notification.object_id } 
         });
@@ -108,6 +109,8 @@ export default function NotificationsPage() {
         return "person-add-outline";
       case "new_comment":
         return "chatbubble-outline";
+      case "post_like":
+        return "heart-outline";
       case "new_thread":
       case "new_tweet":
         return "document-text-outline";
@@ -122,6 +125,8 @@ export default function NotificationsPage() {
         return "New Follower";
       case "new_comment":
         return "New Comment";
+      case "post_like":
+        return "Post Liked";
       case "new_thread":
         return "New Thread";
       case "new_tweet":
@@ -153,7 +158,6 @@ export default function NotificationsPage() {
             Notifications
           </Text>
         </View>
-        
 
         {notifications.length === 0 && !loading && (
           <View className="p-4 bg-neutral-800 rounded-lg">
@@ -168,6 +172,12 @@ export default function NotificationsPage() {
             className={`bg-neutral-800 p-4 rounded-xl mb-4 ${!n.is_read ? "border-l-4 border-[#9fcfff]" : ""}`}
           >
             <View className="flex-row items-center mb-2">
+              {n.sender_image && (
+                <Image 
+                  source={{ uri: n.sender_image }} 
+                  className="w-8 h-8 rounded-full mr-2"
+                />
+              )}
               <Ionicons
                 name={getNotificationIcon(n.type)}
                 size={20}
@@ -181,9 +191,15 @@ export default function NotificationsPage() {
               )}
             </View>
 
-            <Text className="text-gray-400 font-helvetica text-sm">
+            <Text className="text-gray-400 font-helvetica text-sm leading-tight">
               {n.message}
             </Text>
+
+            {n.metadata?.post_preview && (
+              <Text className="text-gray-500 text-xs mt-1 italic">
+                {n.metadata.post_preview}
+              </Text>
+            )}
 
             <Text className="text-gray-500 text-xs mt-2">
               {new Date(n.created_at).toLocaleString()}
