@@ -850,8 +850,10 @@ async def get_certain_build_details(
         if build_doc.exists:
             build_data = build_doc.to_dict()
             # Remove any non-serializable fields
-            build_data = {k: v for k, v in build_data.items() 
-                        if not k.startswith('_') and not isinstance(v, (threading.Lock, type))}
+            build_data = {
+                k: v for k, v in build_data.items()
+                if not k.startswith('_') and isinstance(v, (str, int, float, bool, dict, list, type(None), datetime))
+            }
         
         # Prepare response with basic build info
         response = {
