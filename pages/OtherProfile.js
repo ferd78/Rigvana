@@ -141,7 +141,7 @@ export default function OtherProfile() {
             source={
               profile.profile_picture !== "not set"
                 ? { uri: profile.profile_picture }
-                : require("../assets/images/bpp2.png")
+                : require("../assets/images/bpp.png")
             }
             className="h-24 w-24 rounded-full bg-gray-500"
             resizeMode="cover"
