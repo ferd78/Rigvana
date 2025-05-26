@@ -62,21 +62,38 @@ export default function ForumPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    fetchPosts(selectedTab);
+  }, [selectedTab]);
+
+  // console.log("📦 Raw post data:", data);
+
   async function fetchPosts() {
     try {
       setLoading(true);
       const token = await getToken();
-      const res = await fetch(`${GLOBAL_URL}/forum/posts`, {
+
+      const endpoint = selectedTab === "Following"
+        ? `${GLOBAL_URL}/forum/following-posts` // ✅ correct backend path
+        : `${GLOBAL_URL}/forum/posts`;
+
+      const res = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       if (!res.ok) throw new Error();
+
       const data = await res.json();
       const processed = data.map(p => ({
         ...p,
         created_at: new Date(p.created_at),
-        commentsData: p.comments?.map(c => ({ ...c, created_at: new Date(c.created_at) })) || [],
+        commentsData: p.comments?.map(c => ({
+          ...c,
+          created_at: new Date(c.created_at)
+        })) || [],
         profile_picture_url: p.profile_picture || null,
       }));
+
       setPosts(processed);
     } catch {
       Alert.alert("Error", "Could not fetch posts");
@@ -85,6 +102,7 @@ export default function ForumPage() {
       setRefreshing(false);
     }
   }
+
 
   const handleBuildSelect = async (buildId) => {
     try {
@@ -119,7 +137,7 @@ export default function ForumPage() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchPosts();
+    fetchPosts(selectedTab);
     setNewText('');
   };
 
@@ -130,6 +148,9 @@ export default function ForumPage() {
     });
     if (!res.canceled && res.assets?.length) setNewImage(res.assets[0].uri);
   };
+
+  
+
 
   async function uploadForumImage(uri) {
     const token = await getToken();
@@ -384,10 +405,6 @@ export default function ForumPage() {
                 <Ionicons name="chatbubble-outline" size={20} color="#888" />
                 <Text className="text-gray-400 ml-1">{p.commentsData.length}</Text>
               </View>
-              <Pressable onPress={() => sharePost(p.id)} className="flex-row items-center">
-                <Ionicons name="share-social-outline" size={20} color="#888" />
-                <Text className="text-gray-400 ml-1">{p.shares}</Text>
-              </Pressable>
             </View>
           </View>
         ))}

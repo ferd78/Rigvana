@@ -25,33 +25,41 @@ export default function OtherProfile() {
   const [error, setError]         = useState(null);
   const [isFollowed, setIsFollowed] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await getToken();
-        let res = await fetch(
-          `${GLOBAL_URL}/get-other-profile?target_uid=${userId}`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) throw new Error();
-        const prof = await res.json();
-        setProfile(prof);
-        setIsFollowed(prof.is_following);
 
-        res = await fetch(`${GLOBAL_URL}/user-posts/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        setPosts(data.map(p => ({ ...p, created_at: new Date(p.created_at) })));
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load profile or posts");
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const fetchProfileAndPosts = async () => {
+    try {
+      const token = await getToken();
+      
+      // 🧠 Fetch profile
+      let res = await fetch(
+        `${GLOBAL_URL}/get-other-profile?target_uid=${userId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!res.ok) throw new Error();
+      const prof = await res.json();
+      setProfile(prof);
+      setIsFollowed(prof.is_following);
+
+      // 📦 Fetch posts
+      res = await fetch(`${GLOBAL_URL}/user-posts/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setPosts(data.map(p => ({ ...p, created_at: new Date(p.created_at) })));
+      
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load profile or posts");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfileAndPosts();
   }, [userId]);
+
 
   const toggleFollow = async () => {
     try {
@@ -67,6 +75,7 @@ export default function OtherProfile() {
       if (!res.ok) throw new Error();
       const json = await res.json();
       setIsFollowed(json.currently_following);
+      fetchProfileAndPosts();
     } catch {
       Alert.alert("Error", "Could not update follow status");
     }
@@ -110,8 +119,13 @@ export default function OtherProfile() {
   return (
     <MainLayout>
       <ScrollView className="flex-1 bg-semiblack">
+       
         <View className="flex-row justify-between items-center px-4 mt-6">
+          
           <View className="flex-1 mr-4">
+            <Pressable onPress={() => navigation.goBack()}>
+              <Ionicons name="arrow-back-outline" color={"white"} size={24}/>
+            </Pressable>
             <Text className="text-white text-xl font-bold text-helvetica">
               @{profile.username}
             </Text>
@@ -174,9 +188,9 @@ export default function OtherProfile() {
           >
             <View className="flex-row justify-between items-center mb-2">
               <View className="flex-row items-center">
-                {p.profile_picture_url ? (
+                {p.profile_picture ? (
                   <Image
-                    source={{ uri: p.profile_picture_url }}
+                    source={{ uri: p.profile_picture }}
                     className="w-9 h-9 rounded-full mr-2"
                   />
                 ) : (

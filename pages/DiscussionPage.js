@@ -425,9 +425,9 @@ export default function DiscussionPage({ route }) {
                   }
                 }}
               >
-                {initialPost.profile_picture_url ? (
+                {initialPost.profile_picture? (
                   <Image 
-                    source={{ uri: initialPost.profile_picture_url }}
+                    source={{ uri: initialPost.profile_picture }}
                     className="w-9 h-9 rounded-full bg-gray-700"
                     onError={() => console.log("Failed to load profile picture")}
                   />
@@ -497,9 +497,9 @@ export default function DiscussionPage({ route }) {
                   }
                 }}
               >
-                {comment.profile_picture_url ? (
+                {comment.profile_picture ? (
                   <Image 
-                    source={{ uri: comment.profile_picture_url }}
+                    source={{ uri: comment.profile_picture }}
                     className="w-8 h-8 rounded-full mr-2"
                     onError={() => console.log("Failed to load commenter profile picture")}
                   />
