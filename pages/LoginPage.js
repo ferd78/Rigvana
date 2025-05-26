@@ -86,7 +86,7 @@ function LoginPage() {
 
             
             
-           <View className="items-center w-full mt-72 space-y-2">
+           <View className="items-center w-full mt-40">
             {/* <View className="h-px w-full bg-zinc-700 mb-5" /> */}
 
             <View className="flex-row">

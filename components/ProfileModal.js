@@ -54,7 +54,7 @@ export default function ProfileModal({ visible, onClose, profile, setProfile }) 
       <View className="flex-1 justify-center items-center bg-black/60">
         <View className="w-11/12 p-4 bg-zinc-700 rounded-xl">
           <Pressable onPress={onClose}>
-            <Ionicons name="close-outline" size={24} color={"black"}/>
+            <Ionicons name="close-outline" size={24} color={"white"}/>
           </Pressable>
 
           <Text className="text-lg font-bold mb-2 text-white text-helvetica font-bold">
