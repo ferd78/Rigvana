@@ -141,7 +141,7 @@ export default function OtherProfile() {
             source={
               profile.profile_picture !== "not set"
                 ? { uri: profile.profile_picture }
-                : require("../assets/images/bpp.png")
+                : { uri: 'https://archive.org/download/instagram-plain-round/instagram%20dip%20in%20hair.jpg' }
             }
             className="h-24 w-24 rounded-full bg-gray-500"
             resizeMode="cover"
