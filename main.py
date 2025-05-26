@@ -40,7 +40,19 @@ app = FastAPI(
 
 
 if not firebase_admin._apps:
-    cred = credentials.Certificate("nuclearlaunchcode.json")
+    # Get credentials from environment variable
+    firebase_credentials_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
+    
+    if not firebase_credentials_str:
+        raise Exception("FIREBASE_CREDENTIALS_JSON is not set")
+
+    # Parse the JSON string into a dictionary
+    firebase_credentials_dict = json.loads(firebase_credentials_str)
+
+    # Create credentials object from dictionary
+    cred = credentials.Certificate(firebase_credentials_dict)
+
+    # Initialize Firebase app with storage bucket
     firebase_admin.initialize_app(cred, {
         "storageBucket": "rigvana445.firebasestorage.app"
     })
@@ -1917,38 +1929,7 @@ async def delete_comment(
 
 
 
-@app.post('/forum/posts/{post_id}/share',
-          summary="Share a post",
-          description="Increment the share count of a post",
-          response_description="Updated share count")
-async def share_post(
-    post_id: str,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    try:
-        decoded_token = auth.verify_id_token(credentials.credentials)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    try:
-        post_ref = db.collection("forum_posts").document(post_id)
-        post_doc = post_ref.get()
-
-        if not post_doc.exists:
-            raise HTTPException(status_code=404, detail="Post not found")
-
-        post_ref.update({
-            "shares": firestore.Increment(1)
-        })
-
-        return {"message": "Post shared successfully"}
-
-    except Exception as e:
-        print(f"Error sharing post: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to share post"
-        )
     
 
 @app.post('/follow-user')
