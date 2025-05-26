@@ -99,7 +99,7 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers 
 )
 
-
+otp_ref = db.collection('otp_store')
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -434,8 +434,14 @@ async def request_reset(user: PasswordResetRequest):
 
     # Generate OTP
     otp = str(random.randint(1000, 9999))
-    expires_at = time.time() + 300  # 5 minutes expiry
-    otp_store[email] = {"otp": otp, "expires_at": expires_at}
+    expires_at = datetime.now() + timedelta(minutes=5)  # Use datetime for consistency
+    
+    # Store in Firestore
+    db.collection('otp_store').document(email).set({
+        "otp": otp,
+        "expires_at": expires_at,
+        "created_at": datetime.now()
+    })
 
     # Send OTP via email
     send_email(email, f"Your RigVana OTP is: {otp}")
@@ -444,17 +450,50 @@ async def request_reset(user: PasswordResetRequest):
 
 @app.post("/verify-otp")
 async def verify_otp(data: OTPVerify):
-    email = data.email
-    otp = data.otp
-
-    record = otp_store.get(email)
-    if not record or time.time() > record["expires_at"]:
-        raise HTTPException(status_code=400, detail="OTP expired or not found.")
-    
-    if record["otp"] != otp:
-        raise HTTPException(status_code=401, detail="Invalid OTP.")
-
-    return {"message": "OTP verified. You can now reset your password."}
+    try:
+        email = data.email
+        otp = data.otp
+        
+        # Debug logging
+        logger.info(f"Verification attempt for {email} with OTP: {otp}")
+        
+        # Get from Firestore
+        doc_ref = db.collection('otp_store').document(email)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            logger.warning(f"No OTP record found for {email}")
+            raise HTTPException(
+                status_code=400,
+                detail="OTP expired or not found. Please request a new one."
+            )
+            
+        record = doc.to_dict()
+        logger.info(f"Found OTP record: {record}")
+        
+        # Check expiration
+        if datetime.now() > record["expires_at"]:
+            doc_ref.delete()  # Clean up expired OTP
+            raise HTTPException(
+                status_code=400,
+                detail="OTP has expired. Please request a new one."
+            )
+            
+        # Verify OTP
+        if record["otp"] != otp:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid OTP. Please try again."
+            )
+            
+        return {"message": "OTP verified successfully"}
+        
+    except Exception as e:
+        logger.error(f"OTP verification error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred during verification"
+        )
 
 @app.post("/reset-password")
 async def reset_password(data: ResetPassword):
@@ -462,8 +501,13 @@ async def reset_password(data: ResetPassword):
     otp = data.otp
     new_password = data.new_password
 
-    record = otp_store.get(email)
-    if not record or time.time() > record["expires_at"]:
+    # Get from Firestore (consistent with verify-otp)
+    doc = db.collection('otp_store').document(email).get()
+    if not doc.exists:
+        raise HTTPException(status_code=400, detail="OTP expired or not found.")
+    
+    record = doc.to_dict()
+    if datetime.now() > record["expires_at"]:
         raise HTTPException(status_code=400, detail="OTP expired or not found.")
 
     if record["otp"] != otp:
@@ -477,7 +521,7 @@ async def reset_password(data: ResetPassword):
         raise HTTPException(status_code=500, detail="Failed to reset password")
 
     # Remove OTP after use
-    otp_store.pop(email, None)
+    db.collection('otp_store').document(email).delete()
 
     return {"message": "Password successfully reset"}
 

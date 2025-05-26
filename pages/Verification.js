@@ -31,20 +31,43 @@ function Verification() {
         try {
             const response = await fetch(`${GLOBAL_URL}/verify-otp`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, otp: enteredOtp }),
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({ 
+                    email: email.trim(),  // Ensure trimmed email
+                    otp: enteredOtp 
+                }),
             });
 
+            const data = await response.json();
+            
             if (!response.ok) {
-                const data = await response.json();
-                setOtpError(data.detail || "Invalid OTP");
+                // More specific error handling
+                let errorMsg = "Verification failed";
+                if (response.status === 401) {
+                    errorMsg = "Invalid OTP. Please try again.";
+                    // Clear OTP fields on invalid attempt
+                    setOtp(["", "", "", ""]);
+                    inputRefs[0].current.focus();
+                } else if (response.status === 400) {
+                    errorMsg = data.detail || "OTP expired. Please request a new one.";
+                }
+                setOtpError(errorMsg);
                 return;
             }
 
+            // Successful verification
             setOtpError("");
-            nav.navigate("SetNewPassword", { email, otp: enteredOtp });
+            nav.navigate("SetNewPassword", { 
+                email: email.trim(),
+                otp: enteredOtp 
+            });
+            
         } catch (err) {
-            setOtpError("Verification failed. Try again.");
+            console.error("Verification error:", err);
+            setOtpError("Network error. Please check your connection.");
         }
     };
 
