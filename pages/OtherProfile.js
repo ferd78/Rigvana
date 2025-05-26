@@ -162,18 +162,18 @@ export default function OtherProfile() {
               {isFollowed ? "Followed" : "Follow"}
             </Text>
           </Pressable>
-          <Pressable
+          {/* <Pressable
             onPress={() => Alert.alert("Mention", `@${profile.username}`)}
             className="flex-1 bg-white py-2 rounded-xl items-center"
           >
             <Text className="text-black font-bold text-helvetica">
               Mention
             </Text>
-          </Pressable>
+          </Pressable> */}
         </View>
 
         <View className="border-b border-gray-600 mb-2">
-          <Text className="text-white font-bold text-center py-2">
+          <Text className="text-white font-bold text-center py-2 mt-4">
             Posts
           </Text>
         </View>

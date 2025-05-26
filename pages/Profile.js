@@ -15,6 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { getToken } from "../utils/auth";
 import { GLOBAL_URL } from "../ipconfig";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback } from "react";
 
 export default function ProfilePage() {
   const navigation = useNavigation();
@@ -52,6 +54,40 @@ export default function ProfilePage() {
       }
     })();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true); // show loading while fetching again
+      fetchProfileData();
+    }, [])
+  );
+
+  const fetchProfileData = async () => {
+    try {
+      const token = await getToken();
+
+      const profRes = await fetch(`${GLOBAL_URL}/get-profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!profRes.ok) throw new Error("Failed to fetch profile");
+
+      const profData = await profRes.json();
+      setProfile(profData);
+
+      const postRes = await fetch(`${GLOBAL_URL}/user-posts/${profData.uid}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!postRes.ok) throw new Error("Failed to fetch posts");
+
+      const postData = await postRes.json();
+      setPosts(postData.map((p) => ({ ...p, created_at: new Date(p.created_at) })));
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Could not load your posts");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleLike = async (postId) => {
     try {
@@ -127,9 +163,9 @@ export default function ProfilePage() {
           >
             <View className="flex-row justify-between items-center mb-2">
               <View className="flex-row items-center">
-                {p.profile_picture_url ? (
+                {p.profile_picture ? (
                   <Image
-                    source={{ uri: p.profile_picture_url }}
+                    source={{ uri: p.profile_picture }}
                     className="w-9 h-9 rounded-full mr-2"
                   />
                 ) : (

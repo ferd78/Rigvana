@@ -19,6 +19,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { GLOBAL_URL } from "../ipconfig";
 import { getToken } from '../utils/auth';
 import 'react-native-get-random-values';
+import { KeyboardAvoidingView, Platform } from "react-native";
+
 
 export default function DiscussionPage({ route }) {
   const navigation = useNavigation();
@@ -29,7 +31,7 @@ export default function DiscussionPage({ route }) {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [postLikes, setPostLikes] = useState(initialPost.likes);
   const [postLiked, setPostLiked] = useState(initialPost.liked || false);
-
+  
   const [comments, setComments] = useState(
     (initialPost.comments || []).map((c) => ({
       ...c,
@@ -40,7 +42,7 @@ export default function DiscussionPage({ route }) {
       isReplying: false,
       replyText: "",
       created_at: new Date(c.created_at),
-      profile_picture_url: c.profile_picture_url || null
+      profile_picture: c.profile_picture || null
     }))
   );
   const [commentCount, setCommentCount] = useState(comments.length);
@@ -159,7 +161,7 @@ export default function DiscussionPage({ route }) {
         replyText: "",
         liked: false,
         likes: 0,
-        profile_picture_url: json.profile_picture_url || null
+        profile_picture: json.profile_picture || null
       };
     } catch (error) {
       console.error('Comment error:', error.message);
@@ -230,7 +232,7 @@ export default function DiscussionPage({ route }) {
         created_at: new Date(),
         isReplying: false,
         replyText: "",
-        profile_picture_url: null,
+        profile_picture: null,
         user_id: userUid
       };
 
@@ -308,100 +310,12 @@ export default function DiscussionPage({ route }) {
     }
   };
 
-  const toggleCommentLike = async (commentId) => {
-    setComments(prev =>
-      prev.map(comment => {
-        if (comment.comment_id === commentId) {
-          const newLikedState = !comment.liked;
-          return {
-            ...comment,
-            liked: newLikedState,
-            likes: comment.likes + (newLikedState ? 1 : -1)
-          };
-        }
-        return comment;
-      })
-    );
-  };
-
-  const toggleReplyInput = (commentId) => {
-    setComments(prev =>
-      prev.map(comment => {
-        if (comment.comment_id === commentId) {
-          return {
-            ...comment,
-            isReplying: !comment.isReplying,
-            replyText: comment.isReplying ? "" : comment.replyText
-          };
-        }
-        return comment;
-      })
-    );
-  };
-
-  const onChangeReplyText = (commentId, text) => {
-    setComments(prev =>
-      prev.map(comment => {
-        if (comment.comment_id === commentId) {
-          return { ...comment, replyText: text };
-        }
-        return comment;
-      })
-    );
-  };
-
-  const handleReplySend = async (commentId) => {
-    const parentComment = comments.find(c => c.comment_id === commentId);
-    if (!parentComment?.replyText.trim()) return;
-
-    try {
-      const tempReply = {
-        comment_id: uuidv4(),
-        username: "currentUser",
-        text: parentComment.replyText,
-        created_at: new Date(),
-        parent_id: commentId,
-        profile_picture_url: null,
-        user_id: userUid
-      };
-
-      setComments(prev =>
-        prev.map(comment => {
-          if (comment.comment_id === commentId) {
-            return {
-              ...comment,
-              replies: [...comment.replies, tempReply],
-              isReplying: false,
-              replyText: ""
-            };
-          }
-          return comment;
-        })
-      );
-      setCommentCount(c => c + 1);
-
-      if (onComment) {
-        onComment(tempReply);
-      }
-    } catch (error) {
-      console.error("Reply error:", error);
-      Alert.alert("Error", "Failed to post reply");
-    }
-  };
-
-  const handleShare = async () => {
-    const link = `https://rigvana.app/post/${initialPost.id}`;
-    try {
-      await Clipboard.setStringAsync(link);
-      Alert.alert("Link copied to clipboard", link);
-    } catch (error) {
-      Alert.alert("Error", "Failed to copy link");
-    }
-  };
+  // console.log("Comment profile_picture:", c.profile_picture);
 
   return (
     <MainLayout>
-      <View className="flex-row items-center justify-between p-4 border-b border-gray-800 bg-[#161010]">
+      <KeyboardAvoidingView  behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <View className="flex-row items-center justify-between p-4 border-b border-gray-800 bg-[#161010]">
         <Pressable onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="white" />
         </Pressable>
@@ -477,9 +391,9 @@ export default function DiscussionPage({ route }) {
               <Text className="text-[#9fcfff] font-bold ml-1">Repost</Text>
             </Pressable>
 
-            <Pressable onPress={handleShare} className="px-2">
+            {/* <Pressable onPress={handleShare} className="px-2">
               <Ionicons name="send-outline" size={20} color="#9fcfff" />
-            </Pressable>
+            </Pressable> */}
           </View>
         </View>
 
@@ -501,7 +415,8 @@ export default function DiscussionPage({ route }) {
                   <Image 
                     source={{ uri: comment.profile_picture }}
                     className="w-8 h-8 rounded-full mr-2"
-                    onError={() => console.log("Failed to load commenter profile picture")}
+                    onError={() => console.log(`❌ Image load failed for: ${comment.profile_picture}`)}
+                    
                   />
                 ) : (
                   <View className="w-8 h-8 rounded-full bg-gray-800 justify-center items-center mr-2">
@@ -570,6 +485,9 @@ export default function DiscussionPage({ route }) {
           )}
         </Pressable>
       </View>
+      </KeyboardAvoidingView>
+      
     </MainLayout>
   );
 }
+
