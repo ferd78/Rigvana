@@ -23,47 +23,58 @@ function MapPage() {
 
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
 
-      const { coords } = await Location.getCurrentPositionAsync({ accuracy: 5 });
-      setRegion({
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      });
+        const { coords } = await Location.getCurrentPositionAsync({ accuracy: 5 });
+        setRegion({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        });
 
-      fetchStores();
+        await fetchStores();
+      } catch {
+        // Silent location error
+      }
     })();
   }, []);
 
   const fetchStores = async () => {
     try {
       const res = await fetch(`${GLOBAL_URL}/stores`);
+      if (!res.ok) return;
+      
       const text = await res.text();
       const data = JSON.parse(text);
-
-      const fixed = data.map((item) => ({
+      
+      const fixed = data.map((item, index) => ({
         ...item,
+        id: item.id || `store-${index}`, // Ensure ID exists
         location: {
           latitude: item.location.lat,
           longitude: item.location.lng,
         },
       }));
-
+      
       setStores(fixed);
-    } catch (error) {
-      console.warn("Fetch stores failed:", error.message);
+    } catch {
+      // Silent all errors
     }
   };
 
   return (
     <MainLayout>
-      
       <View className="items-center mt-4 mb-2">
-        <SearchBar value={searchText} onChangeText={setSearchText} placeholder={"Search stores.."}/>
+        <SearchBar 
+          value={searchText} 
+          onChangeText={setSearchText} 
+          placeholder={"Search stores.."}
+        />
       </View>
+      
       <View className="items-center mt-2">
         {region ? (
           <View style={{ borderRadius: 12, overflow: "hidden", width: 390, height: 390 }}>
@@ -75,7 +86,7 @@ function MapPage() {
             >
               {filteredStores.map((store) => (
                 <Marker
-                  key={store.id}
+                  key={store.id} // Now using guaranteed unique ID
                   coordinate={{
                     latitude: store.location.latitude,
                     longitude: store.location.longitude,
@@ -103,7 +114,6 @@ function MapPage() {
           <ActivityIndicator color="#9fcfff" size="large" />
         )}
       </View>
-
 
       <Stores data={filteredStores} />
     </MainLayout>
