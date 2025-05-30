@@ -17,8 +17,6 @@ Rigvana is a mobile application that combines a PC Builder tool with a Threads-l
 
 ``` npm install ```
 
-```Go to ipconfig.js```
-
 ``` npx expo start ```
 
 ```scan the QR code or go to the link provided```
