@@ -1,4 +1,15 @@
-# How to run
+
+
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6f0de4a4-734f-467d-8d72-a9e44465a752"/>
+</p>
+
+# What is it? 
+Rigvana is a mobile application that combines a PC Builder tool with a Threads-like community page that lets user interact.
+
+
+# How to run?
 
 ``` git clone https://github.com/ferd78/Rigvana.git ```
 
